@@ -52,9 +52,18 @@ export function createGameScene(canvas, { refs, isMobileRef, onSceneReady, onLoa
         // reduce el FOV vertical hasta igualar el ancho visible de un monitor 16:9.
         const BASE_FOV = 0.8;      // FOV vertical por defecto (referencia escritorio)
         const REF_ASPECT = 16 / 9; // Encuadre de referencia
+        // Ángulo fijo equivalente a un offset (0, 15, -20) respecto al objetivo.
+        // Se fija con alpha/beta/radius (y no con setPosition) porque con
+        // lockedTarget un setPosition recalcularía el ángulo según dónde esté el
+        // jugador en ese instante, cambiando la vista tras cada resize en móvil.
+        const CAMERA_ALPHA = -Math.PI / 2;      // Detrás del eje Z (mirando a +Z)
+        const CAMERA_BETA = Math.acos(15 / 25); // Elevación: altura 15 a distancia 25
+        const CAMERA_RADIUS = 25;
         const applyCameraLayout = () => {
             engine.resize();
-            camera.setPosition(new BABYLON.Vector3(0, 15, -20));
+            camera.alpha = CAMERA_ALPHA;
+            camera.beta = CAMERA_BETA;
+            camera.radius = CAMERA_RADIUS;
             const aspect = engine.getAspectRatio(camera);
             if (aspect > REF_ASPECT) {
                 const refHorizontalFov = 2 * Math.atan(Math.tan(BASE_FOV / 2) * REF_ASPECT);
@@ -64,8 +73,8 @@ export function createGameScene(canvas, { refs, isMobileRef, onSceneReady, onLoa
             }
         };
 
-        applyCameraLayout();
         camera.setTarget(BABYLON.Vector3.Zero());
+        applyCameraLayout();
         camera.inputs.clear();
         camera.inertia = 0;
         camera.angularSensibilityX = 0;
