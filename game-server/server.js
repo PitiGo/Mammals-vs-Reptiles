@@ -80,7 +80,7 @@ const io = new Server(httpServer, {
 // --- Constantes del Juego (parametrizables) ---
 const availableSalas = parseEnvList('ROOMS', ['room1', 'room2']);
 const PLAYER_RADIUS = 0.5;
-const PLAYER_SPEED = 5.5; // Velocidad base (u/s). Subida leve para compensar el campo más grande.
+const PLAYER_SPEED = 5.0; // Velocidad base (u/s). Reducida para que llegar a portería cueste más.
 const BALL_CARRIER_SPEED_MULTIPLIER = 0.88; // El portador pierde un 12%: permite alcanzarlo y presionarlo
 const BALL_MASS = 0.45;
 const PLAYER_MASS = 75; // Masa real
@@ -118,7 +118,7 @@ const MATCH_DURATION_MS = (parseInt(process.env.MATCH_DURATION_SEC, 10) || 180) 
 // en la cancha. Al recoger uno, la "stamina" (combustible del boost) se rellena
 // al máximo y el jugador corre más rápido mientras se gasta al moverse. No hay
 // regeneración pasiva: solo los ítems recargan el boost.
-const SPEED_BOOST_MULTIPLIER = 1.55; // Velocidad extra mientras el boost está activo
+const SPEED_BOOST_MULTIPLIER = 1.35; // Velocidad extra con boost: ventaja clara sin cruzar el campo en 2s
 const STAMINA_MAX = 100;
 const STAMINA_DRAIN_PER_SEC = 32;    // Gasto del boost al moverse
 
