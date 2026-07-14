@@ -8,22 +8,22 @@ const STAT_MAX = {
   shot: 1.3,
 };
 
-const StatBar = ({ label, value, max, color }) => {
+const StatBar = ({ label, value, max, color, compact }) => {
   const pct = Math.min(100, (value / max) * 100);
   return (
-    <div style={{ marginBottom: '0.35rem' }}>
+    <div style={{ marginBottom: compact ? '0.2rem' : '0.35rem' }}>
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
-        fontSize: '0.7rem',
+        fontSize: compact ? '0.62rem' : '0.7rem',
         color: '#6b7280',
-        marginBottom: '0.15rem',
+        marginBottom: compact ? '0.05rem' : '0.15rem',
       }}
       >
         <span>{label}</span>
         <span>{Math.round(pct)}%</span>
       </div>
-      <div style={{ background: '#e5e7eb', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+      <div style={{ background: '#e5e7eb', borderRadius: 4, height: compact ? 6 : 8, overflow: 'hidden' }}>
         <div style={{
           width: `${pct}%`,
           background: color,
@@ -37,28 +37,31 @@ const StatBar = ({ label, value, max, color }) => {
   );
 };
 
-const CharacterStats = ({ characterId, teamColor }) => {
+const CharacterStats = ({ characterId, teamColor, compact = false }) => {
   const { t } = useTranslation();
   const stats = getCharacterStats(characterId);
   return (
-    <div style={{ marginTop: '0.75rem', textAlign: 'left' }}>
+    <div style={{ marginTop: compact ? '0.35rem' : '0.75rem', textAlign: 'left' }}>
       <StatBar
         label={t('teamSelection.stats.speed')}
         value={stats.speedMultiplier}
         max={STAT_MAX.speed}
         color={teamColor}
+        compact={compact}
       />
       <StatBar
         label={t('teamSelection.stats.control')}
         value={stats.controlRadius}
         max={STAT_MAX.control}
         color={teamColor}
+        compact={compact}
       />
       <StatBar
         label={t('teamSelection.stats.shot')}
         value={stats.shotMultiplier}
         max={STAT_MAX.shot}
         color={teamColor}
+        compact={compact}
       />
     </div>
   );

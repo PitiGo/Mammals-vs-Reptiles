@@ -1,18 +1,31 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../i18n/LanguageContext';
 import CharacterStats from './CharacterStats';
+import { useDeviceLayout } from '../hooks/useDeviceLayout';
 
-const CharacterThumbnail = ({ characterId, teamColor }) => {
+const CharacterThumbnail = ({ characterId, teamColor, compact }) => {
   const [failed, setFailed] = useState(false);
+
+  const baseStyle = compact
+    ? {
+      width: '64px',
+      height: '64px',
+      borderRadius: '8px',
+      marginBottom: 0,
+      flexShrink: 0,
+    }
+    : {
+      width: '100%',
+      height: '200px',
+      borderRadius: '8px',
+      marginBottom: '1rem',
+    };
 
   if (failed) {
     return (
       <div style={{
-        width: '100%',
-        height: '200px',
+        ...baseStyle,
         backgroundColor: '#e5e7eb',
-        borderRadius: '8px',
-        marginBottom: '1rem',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -30,11 +43,8 @@ const CharacterThumbnail = ({ characterId, teamColor }) => {
       alt={characterId}
       onError={() => setFailed(true)}
       style={{
-        width: '100%',
-        height: '200px',
+        ...baseStyle,
         objectFit: 'cover',
-        borderRadius: '8px',
-        marginBottom: '1rem',
         backgroundColor: '#e5e7eb',
       }}
     />
@@ -57,6 +67,10 @@ const TeamSelectionScreen = ({
 }) => {
 
   const { t } = useTranslation();
+  const { isMobile } = useDeviceLayout();
+  // En móvil todo debe caber sin scroll (o casi): sin imagen de portada,
+  // tarjetas de personaje horizontales y espaciados reducidos.
+  const compact = isMobile;
   const maxPlayersPerTeam = 3;
 
   // Definición de los personajes disponibles para cada equipo
@@ -243,22 +257,22 @@ const TeamSelectionScreen = ({
         borderRadius: '8px',
         width: '100%',
         maxWidth: '1000px',
-        padding: '1rem',
+        padding: compact ? '0.6rem' : '1rem',
         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-        maxHeight: '95vh',
+        maxHeight: compact ? '98vh' : '95vh',
         overflowY: 'auto',
       }}>
         {/* Nueva sección: Imagen y título */}
         <div style={{
           textAlign: 'center',
-          marginBottom: '2rem',
+          marginBottom: compact ? '0.6rem' : '2rem',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: '1rem'
+          gap: compact ? '0.4rem' : '1rem'
         }}>
-          {/* La imagen solo se muestra si no se ha seleccionado equipo */}
-          {!currentTeam && (
+          {/* La imagen de portada solo en escritorio: en móvil roba altura y obliga a hacer scroll */}
+          {!currentTeam && !compact && (
             <img
               src="/mamvsreptiles.webp"
               alt="Mamíferos vs Reptiles"
@@ -277,7 +291,7 @@ const TeamSelectionScreen = ({
             textAlign: 'center',
             margin: 0,
             color: '#1f2937',
-            fontSize: '1.5rem',
+            fontSize: compact ? '1.05rem' : '1.5rem',
             fontWeight: 'bold',
           }}>
             {!currentTeam
@@ -292,18 +306,18 @@ const TeamSelectionScreen = ({
         <div style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: '1rem',
+          gap: compact ? '0.6rem' : '1rem',
         }}>
           {/* Equipos */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
-            gap: '1rem',
+            gap: compact ? '0.6rem' : '1rem',
           }}>
             {/* Equipo Mammals */}
             <div style={{
               backgroundColor: '#f8fafc',
-              padding: '1rem',
+              padding: compact ? '0.6rem' : '1rem',
               borderRadius: '8px',
               border: '1px solid #e2e8f0',
               transition: 'all 0.3s ease',
@@ -322,9 +336,9 @@ const TeamSelectionScreen = ({
                 backgroundColor: 'white',
                 border: '1px solid #e5e7eb',
                 borderRadius: '8px',
-                padding: '0.5rem',
+                padding: compact ? '0.25rem' : '0.5rem',
                 marginBottom: '0.5rem',
-                maxHeight: '150px',
+                maxHeight: compact ? '92px' : '150px',
                 overflowY: 'auto',
               }}>
                 {teams?.left?.map(player => (
@@ -407,7 +421,7 @@ const TeamSelectionScreen = ({
             {/* Equipo Reptiles */}
             <div style={{
               backgroundColor: '#f8fafc',
-              padding: '1rem',
+              padding: compact ? '0.6rem' : '1rem',
               borderRadius: '8px',
               border: '1px solid #e2e8f0',
               transition: 'all 0.3s ease',
@@ -426,9 +440,9 @@ const TeamSelectionScreen = ({
                 backgroundColor: 'white',
                 border: '1px solid #e5e7eb',
                 borderRadius: '8px',
-                padding: '0.5rem',
+                padding: compact ? '0.25rem' : '0.5rem',
                 marginBottom: '0.5rem',
-                maxHeight: '150px',
+                maxHeight: compact ? '92px' : '150px',
                 overflowY: 'auto',
               }}>
                 {teams?.right?.map(player => (
@@ -513,15 +527,15 @@ const TeamSelectionScreen = ({
             <>
               <div style={{
                 backgroundColor: '#f8fafc',
-                padding: '1.5rem',
+                padding: compact ? '0.6rem' : '1.5rem',
                 borderRadius: '8px',
                 border: '1px solid #e2e8f0',
               }}>
                 <h3 style={{
                   textAlign: 'center',
-                  marginBottom: '1.5rem',
+                  marginBottom: compact ? '0.6rem' : '1.5rem',
                   color: getTeamColor(currentTeam),
-                  fontSize: '1.25rem',
+                  fontSize: compact ? '0.95rem' : '1.25rem',
                   fontWeight: 'bold',
                 }}>
                   {selectedCharacter
@@ -532,7 +546,7 @@ const TeamSelectionScreen = ({
                 <div style={{
                   display: 'grid',
                   gridTemplateColumns: '1fr 1fr',
-                  gap: '1.5rem',
+                  gap: compact ? '0.6rem' : '1.5rem',
                   maxWidth: '800px',
                   margin: '0 auto',
                 }}>
@@ -542,32 +556,40 @@ const TeamSelectionScreen = ({
                       onClick={() => !getReadyStatus(currentTeam, playerId) && onCharacterSelect(character.id)}
                       style={{
                         backgroundColor: character.id === selectedCharacter ? '#f0f9ff' : 'white',
-                        padding: '1rem',
+                        padding: compact ? '0.6rem' : '1rem',
                         borderRadius: '12px',
                         border: `2px solid ${character.id === selectedCharacter ? getTeamColor(currentTeam) : '#e2e8f0'}`,
                         cursor: getReadyStatus(currentTeam, playerId) ? 'not-allowed' : 'pointer',
                         transition: 'all 0.2s ease',
                         opacity: getReadyStatus(currentTeam, playerId) && character.id !== selectedCharacter ? 0.5 : 1,
-                        textAlign: 'center',
+                        textAlign: compact ? 'left' : 'center',
+                        display: compact ? 'flex' : 'block',
+                        gap: compact ? '0.6rem' : 0,
+                        alignItems: compact ? 'center' : undefined,
                       }}
                     >
-                      <CharacterThumbnail characterId={character.id} teamColor={getTeamColor(currentTeam)} />
-                      <h3 style={{
-                        fontSize: '1.25rem',
-                        fontWeight: 'bold',
-                        marginBottom: '0.5rem',
-                        color: getTeamColor(currentTeam),
-                      }}>
-                        {character.name}
-                      </h3>
-                      <p style={{
-                        fontSize: '1rem',
-                        color: '#6b7280',
-                        margin: 0,
-                      }}>
-                        {character.description}
-                      </p>
-                      <CharacterStats characterId={character.id} teamColor={getTeamColor(currentTeam)} />
+                      <CharacterThumbnail characterId={character.id} teamColor={getTeamColor(currentTeam)} compact={compact} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <h3 style={{
+                          fontSize: compact ? '0.95rem' : '1.25rem',
+                          fontWeight: 'bold',
+                          marginTop: 0,
+                          marginBottom: compact ? '0.15rem' : '0.5rem',
+                          color: getTeamColor(currentTeam),
+                        }}>
+                          {character.name}
+                        </h3>
+                        {!compact && (
+                          <p style={{
+                            fontSize: '1rem',
+                            color: '#6b7280',
+                            margin: 0,
+                          }}>
+                            {character.description}
+                          </p>
+                        )}
+                        <CharacterStats characterId={character.id} teamColor={getTeamColor(currentTeam)} compact={compact} />
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -576,12 +598,12 @@ const TeamSelectionScreen = ({
               {selectedCharacter && (
                 <div style={{
                   textAlign: 'center',
-                  marginTop: '1rem',
+                  marginTop: compact ? '0.25rem' : '1rem',
                 }}>
                   <button
                     onClick={onToggleReady}
                     style={{
-                      padding: '0.75rem 2rem',
+                      padding: compact ? '0.55rem 1.5rem' : '0.75rem 2rem',
                       backgroundColor: getReadyStatus(currentTeam, playerId)
                         ? '#22c55e'
                         : '#eab308',
@@ -589,7 +611,7 @@ const TeamSelectionScreen = ({
                       border: 'none',
                       borderRadius: '8px',
                       cursor: 'pointer',
-                      fontSize: '1.125rem',
+                      fontSize: compact ? '1rem' : '1.125rem',
                       fontWeight: 'bold',
                       transition: 'all 0.2s',
                       boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
@@ -608,11 +630,11 @@ const TeamSelectionScreen = ({
           <div style={{
             textAlign: 'center',
             color: '#64748b',
-            fontSize: '0.875rem',
-            padding: '0.75rem',
+            fontSize: compact ? '0.75rem' : '0.875rem',
+            padding: compact ? '0.4rem' : '0.75rem',
             backgroundColor: 'rgba(241, 245, 249, 0.5)',
             borderRadius: '8px',
-            marginTop: '0.5rem',
+            marginTop: compact ? 0 : '0.5rem',
           }}>
             {!currentTeam
               ? t('teamSelection.selectTeamContinue')

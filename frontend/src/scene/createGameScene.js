@@ -45,20 +45,13 @@ export function createGameScene(canvas, { refs, isMobileRef, onSceneReady, onLoa
             scene
         );
 
-        // Posicionar la cámara. En móvil se recalibra según el aspect ratio para
-        // aprovechar landscape y enseñar más campo sin deformar la imagen.
+        // Mismo encuadre en todas las pantallas: la cámara sigue al jugador a la
+        // misma distancia y con el mismo FOV vertical que en PC, así la proporción
+        // de campo visible no cambia entre móvil y escritorio (en apaisado solo
+        // varía lo que asoma por los laterales, como al redimensionar en PC).
         const applyCameraLayout = () => {
             engine.resize();
-            if (mobile) {
-                const aspect = Math.max(0.5, engine.getRenderWidth() / Math.max(1, engine.getRenderHeight()));
-                const landscape = aspect >= 1;
-                camera.setPosition(landscape
-                    ? new BABYLON.Vector3(0, 22, -29)
-                    : new BABYLON.Vector3(0, 24, -28));
-                camera.fov = landscape ? 0.86 : 1.02;
-            } else {
-                camera.setPosition(new BABYLON.Vector3(0, 15, -20));
-            }
+            camera.setPosition(new BABYLON.Vector3(0, 15, -20));
         };
 
         applyCameraLayout();
