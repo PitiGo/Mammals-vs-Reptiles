@@ -102,6 +102,7 @@ export function createUpdateGameState(refs) {
     missileIndicatorRef,
     missileContainerRef,
     passLabelTextRef,
+    controllingPlayerIdRef,
   } = refs;
 
   // Tracks players whose mesh is being created asynchronously, to avoid
@@ -133,6 +134,10 @@ export function createUpdateGameState(refs) {
       missiles,
     } = gameState;
     const isMobileView = isMobileRef.current;
+
+    if (controllingPlayerIdRef) {
+      controllingPlayerIdRef.current = controllingPlayerId || null;
+    }
 
     // Match timer: push to React state only when the whole second changes
     // (avoids 20Hz re-renders).

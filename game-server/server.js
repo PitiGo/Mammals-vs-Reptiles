@@ -94,7 +94,7 @@ const BALL_CONTROL_RADIUS = 1.5;
 // --- Robo de balón / tackle ---
 const STEAL_GRACE_MS = 500;        // Tras ganar la posesión, no te la pueden robar (evita tira y afloja)
 const STEAL_VICTIM_LOCK_MS = 650;  // Tras perderla, la víctima no puede recuperarla de inmediato
-const STEAL_RADIUS_BONUS = 1.25;   // Alcance de robo más generoso, igual al bonus de recogida
+const STEAL_RADIUS_BONUS = 1.35;   // Alcance de robo visible y un poco más generoso que la recogida
 const PICKUP_RADIUS_BONUS = 1.25;  // La recogida de balón suelto es algo más generosa que el control
 const BOT_STEAL_CHANCE = 0.10;     // Probabilidad por tick de que un bot en rango robe a un rival
 const BOT_STEAL_COOLDOWN_MS = 800; // Separación mínima entre intentos de robo de un bot
@@ -1434,6 +1434,21 @@ function updateGamePhysics(roomId, state) {
         targetBallPos.y = BALL_RADIUS;
         state.ballPosition = Vector3.Lerp(state.ballPosition, targetBallPos, 0.35); // Un poco más rápido
         state.ballVelocity.set(0, 0, 0);
+      }
+    }
+    // Robo "pegajoso": mantener ESPACIO cerca de un rival con el balón intenta
+    // quitarle la posesión en cuanto el área de robo alcanza el balón.
+    else if (
+      playerCurrentlyControllingId !== null &&
+      playerCurrentlyControllingId !== player.id &&
+      player.wantsControl &&
+      now >= (player.stunnedUntil || 0) &&
+      now >= (player.controlLockUntil || 0) &&
+      distSq < (controlRadius * STEAL_RADIUS_BONUS) * (controlRadius * STEAL_RADIUS_BONUS)
+    ) {
+      const controller = state.players.get(playerCurrentlyControllingId);
+      if (controller && controller.team !== player.team && tryStealBall(roomId, state, player)) {
+        playerCurrentlyControllingId = player.id;
       }
     }
     // Recogida "pegajosa": si el jugador mantiene ESPACIO (wantsControl), nadie

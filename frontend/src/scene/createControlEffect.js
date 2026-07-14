@@ -1,7 +1,6 @@
 import * as BABYLON from '@babylonjs/core';
 import * as GUI from '@babylonjs/gui';
-
-const BALL_CONTROL_RADIUS = 1.5;
+import { BALL_CONTROL_RADIUS } from '../constants/characterStats';
 
 export function createControlEffect(scene, advancedTexture) {
   const aimShotMaterial = new BABYLON.StandardMaterial('aimShotMaterial', scene);
@@ -133,16 +132,63 @@ export function createControlEffect(scene, advancedTexture) {
   controlRing.material = ringMaterial;
   controlRing.isVisible = false;
 
-  const rangeRing = BABYLON.MeshBuilder.CreateTorus('rangeRing', {
+  const pickupRing = BABYLON.MeshBuilder.CreateTorus('pickupRing', {
     diameter: BALL_CONTROL_RADIUS * 2,
     thickness: 0.06,
-    tessellation: 32,
+    tessellation: 40,
   }, scene);
-  const rangeMaterial = new BABYLON.StandardMaterial('rangeMaterial', scene);
-  rangeMaterial.emissiveColor = new BABYLON.Color3(0.2, 0.9, 0.4);
-  rangeMaterial.alpha = 0.35;
-  rangeRing.material = rangeMaterial;
-  rangeRing.isVisible = false;
+  const pickupMaterial = new BABYLON.StandardMaterial('pickupMaterial', scene);
+  pickupMaterial.emissiveColor = new BABYLON.Color3(0.2, 0.9, 0.4);
+  pickupMaterial.alpha = 0.42;
+  pickupMaterial.disableLighting = true;
+  pickupMaterial.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
+  pickupRing.material = pickupMaterial;
+  pickupRing.isVisible = false;
+  pickupRing.isPickable = false;
+  pickupRing.renderingGroupId = 1;
+
+  const stealRing = BABYLON.MeshBuilder.CreateTorus('stealRing', {
+    diameter: BALL_CONTROL_RADIUS * 2,
+    thickness: 0.1,
+    tessellation: 40,
+  }, scene);
+  const stealMaterial = new BABYLON.StandardMaterial('stealMaterial', scene);
+  stealMaterial.emissiveColor = new BABYLON.Color3(1, 0.35, 0.15);
+  stealMaterial.diffuseColor = new BABYLON.Color3(0.9, 0.2, 0.05);
+  stealMaterial.alpha = 0.55;
+  stealMaterial.disableLighting = true;
+  stealMaterial.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
+  stealRing.material = stealMaterial;
+  stealRing.isVisible = false;
+  stealRing.isPickable = false;
+  stealRing.renderingGroupId = 1;
+
+  const stealRingGlow = BABYLON.MeshBuilder.CreateTorus('stealRingGlow', {
+    diameter: BALL_CONTROL_RADIUS * 2,
+    thickness: 0.04,
+    tessellation: 40,
+  }, scene);
+  const stealGlowMaterial = stealMaterial.clone('stealGlowMaterial');
+  stealGlowMaterial.alpha = 0.18;
+  stealRingGlow.material = stealGlowMaterial;
+  stealRingGlow.parent = stealRing;
+  stealRingGlow.isPickable = false;
+  stealRingGlow.renderingGroupId = 1;
+
+  pickupMaterial.metadata = { baseAlpha: 0.42 };
+  stealMaterial.metadata = { baseAlpha: 0.55 };
+
+  const setActionRing = (ring, radius, ballInRange) => {
+    if (!ring) return;
+    const scale = radius / BALL_CONTROL_RADIUS;
+    ring.scaling.set(scale, 1, scale);
+    const material = ring.material;
+    if (material?.metadata) {
+      material.alpha = ballInRange
+        ? Math.min(0.95, material.metadata.baseAlpha + 0.28)
+        : material.metadata.baseAlpha;
+    }
+  };
 
   const particles = [];
   for (let i = 0; i < 20; i++) {
@@ -233,7 +279,9 @@ export function createControlEffect(scene, advancedTexture) {
     aimDirection: null,
     passTargetId: null,
     controlRing,
-    rangeRing,
+    pickupRing,
+    stealRing,
+    setActionRing,
     animateParticles,
     stopParticles,
     controlTimeText,
@@ -243,4 +291,4 @@ export function createControlEffect(scene, advancedTexture) {
   };
 }
 
-export { BALL_CONTROL_RADIUS };
+export { BALL_CONTROL_RADIUS } from '../constants/characterStats';

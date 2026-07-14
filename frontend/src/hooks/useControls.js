@@ -10,7 +10,7 @@ const vectorsApproximatelyEqual = (a, b, epsilon = VECTOR_EPSILON) =>
 /**
  * Keyboard + keepalive movement for the local player.
  */
-export function useControls({ socketRef, gameStarted, isConnected, chatInputFocusRef }) {
+export function useControls({ socketRef, gameStarted, isConnected, chatInputFocusRef, wantsControlRef }) {
   const keysPressed = useRef({ up: false, down: false, left: false, right: false });
   const joystickMoveRef = useRef({ x: 0, z: 0 });
   const lastEmittedMoveRef = useRef({ x: 0, z: 0 });
@@ -98,6 +98,7 @@ export function useControls({ socketRef, gameStarted, isConnected, chatInputFocu
           if (!keysPressed.current.right) { keysPressed.current.right = true; keyChanged = true; }
           break;
         case ' ':
+          if (wantsControlRef) wantsControlRef.current = true;
           // ballControl must stay non-volatile — possession start/end must not be dropped.
           socketRef.current.emit('ballControl', { control: true });
           break;
@@ -133,6 +134,7 @@ export function useControls({ socketRef, gameStarted, isConnected, chatInputFocu
           if (keysPressed.current.right) { keysPressed.current.right = false; keyChanged = true; }
           break;
         case ' ':
+          if (wantsControlRef) wantsControlRef.current = false;
           // ballControl must stay non-volatile — possession start/end must not be dropped.
           socketRef.current.emit('ballControl', { control: false });
           break;
@@ -160,7 +162,8 @@ export function useControls({ socketRef, gameStarted, isConnected, chatInputFocu
   const resetMovement = useCallback(() => {
     keysPressed.current = { up: false, down: false, left: false, right: false };
     joystickMoveRef.current = { x: 0, z: 0 };
-  }, []);
+    if (wantsControlRef) wantsControlRef.current = false;
+  }, [wantsControlRef]);
 
   return { handleDirectionChange, sendMovement, resetMovement };
 }

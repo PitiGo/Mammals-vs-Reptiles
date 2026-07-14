@@ -6,7 +6,8 @@ import * as GUI from '@babylonjs/gui';
 import * as CANNON from 'cannon-es';
 import CharacterManager from '../services/characterManager';
 import { createScoreDisplay } from './scoreDisplay';
-import { createControlEffect, BALL_CONTROL_RADIUS } from './createControlEffect';
+import { createControlEffect } from './createControlEffect';
+import { getStealRadius, getPickupRadius } from '../constants/characterStats';
 import { createProceduralField, FIELD_WIDTH, FIELD_HEIGHT } from './createField';
 import { createGoal } from './createGoal';
 import { upgradeMissileItemMeshes } from './updateGameState';
@@ -754,19 +755,57 @@ export function createGameScene(canvas, { refs, isMobileRef, onSceneReady, onLoa
                 }
 
                 const localPlayer = refs.socketRef.current?.id && refs.playersRef.current[refs.socketRef.current.id];
-                if (localPlayer && refs.ballRef.current) {
-                    const dx = refs.ballRef.current.position.x - localPlayer.position.x;
-                    const dz = refs.ballRef.current.position.z - localPlayer.position.z;
-                    const inRange = (dx * dx + dz * dz) <= (BALL_CONTROL_RADIUS * BALL_CONTROL_RADIUS);
-                    const rangeRing = refs.controlEffectsRef.current.rangeRing;
-                    if (rangeRing) {
-                        rangeRing.position = localPlayer.position.clone();
-                        rangeRing.position.y = 0.05;
-                        rangeRing.isVisible = inRange && !refs.controlEffectsRef.current.controlRing.isVisible;
+                const controlEffects = refs.controlEffectsRef.current;
+                controlEffects.pickupRing.isVisible = false;
+                controlEffects.stealRing.isVisible = false;
+
+                if (localPlayer) {
+                    const selfId = refs.socketRef.current.id;
+                    const charType = refs.playerMetaRef.current[selfId]?.characterType || 'player';
+                    const localTeam = refs.playerMetaRef.current[selfId]?.team;
+                    const controllingId = refs.controllingPlayerIdRef?.current;
+                    const controllerTeam = controllingId
+                        ? refs.playerMetaRef.current[controllingId]?.team
+                        : null;
+                    const wantsControl = !!refs.wantsControlRef?.current;
+                    const localHasBall = controllingId === selfId;
+                    const rivalControls = !!controllingId
+                        && controllingId !== selfId
+                        && controllerTeam
+                        && localTeam
+                        && controllerTeam !== localTeam;
+                    const looseBall = !controllingId;
+
+                    if (wantsControl && !localHasBall && refs.ballRef.current) {
+                        const dx = refs.ballRef.current.position.x - localPlayer.position.x;
+                        const dz = refs.ballRef.current.position.z - localPlayer.position.z;
+                        const distSq = dx * dx + dz * dz;
+
+                        if (rivalControls) {
+                            const stealRadius = getStealRadius(charType);
+                            controlEffects.stealRing.position.copyFrom(localPlayer.position);
+                            controlEffects.stealRing.position.y = 0.06;
+                            controlEffects.setActionRing(
+                                controlEffects.stealRing,
+                                stealRadius,
+                                distSq <= stealRadius * stealRadius,
+                            );
+                            controlEffects.stealRing.isVisible = true;
+                            controlEffects.stealRing.rotation.y += 0.03;
+                        } else if (looseBall) {
+                            const pickupRadius = getPickupRadius(charType);
+                            controlEffects.pickupRing.position.copyFrom(localPlayer.position);
+                            controlEffects.pickupRing.position.y = 0.05;
+                            controlEffects.setActionRing(
+                                controlEffects.pickupRing,
+                                pickupRadius,
+                                distSq <= pickupRadius * pickupRadius,
+                            );
+                            controlEffects.pickupRing.isVisible = true;
+                        }
                     }
                 }
 
-                const controlEffects = refs.controlEffectsRef.current;
                 const aimDirection = controlEffects.aimDirection;
                 if (localPlayer && aimDirection && controlEffects.aimArrowRoot?.isEnabled()) {
                     controlEffects.aimArrowRoot.position.copyFrom(localPlayer.position);

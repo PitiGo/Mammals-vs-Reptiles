@@ -81,6 +81,8 @@ const Game = () => {
     const missileIndicatorRef = useRef(null); // Badge 🚀 cuando llevas un misil armado
     const missileContainerRef = useRef(null); // AssetContainer del modelo missile.glb
     const passLabelTextRef = useRef('PASS');
+    const wantsControlRef = useRef(false);
+    const controllingPlayerIdRef = useRef(null);
 
     const [showingEndMessage, setShowingEndMessage] = useState(false);
 
@@ -200,6 +202,7 @@ const Game = () => {
         gameStarted,
         isConnected,
         chatInputFocusRef,
+        wantsControlRef,
     });
 
     const handleToggleReady = useCallback(() => {
@@ -237,6 +240,8 @@ const Game = () => {
         missileIndicatorRef,
         missileContainerRef,
         passLabelTextRef,
+        wantsControlRef,
+        controllingPlayerIdRef,
     }), [setConnectedPlayers]);
 
     const onSceneReady = useCallback(() => setSceneReady(true), []);
@@ -969,6 +974,7 @@ const Game = () => {
                                         handleDirectionChange(vector);
                                     }}
                                     onBallControlChange={(control) => {
+                                        wantsControlRef.current = control;
                                         if (socketRef.current) {
                                             // Non-volatile: possession events must reach the server reliably.
                                             socketRef.current.emit('ballControl', { control });
