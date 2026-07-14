@@ -7,11 +7,13 @@ import LanguageSelector from '../i18n/LanguageSelector';
 import GameToast from './GameToast';
 import VictoryScreen from './VictoryScreen';
 import KickoffCountdown from './KickoffCountdown';
+import RotateDeviceOverlay from './RotateDeviceOverlay';
 import { useTranslation } from '../i18n/LanguageContext';
 import { useSearchParams } from 'react-router-dom';
 import { useControls } from '../hooks/useControls';
 import { useScene } from '../hooks/useScene';
 import { useGameSocket } from '../hooks/useGameSocket';
+import { useDeviceLayout } from '../hooks/useDeviceLayout';
 import { initAudio, playGoal, playCrowdCheer, playWhistle, playBounce, playItem, playTackle, playMissileLaunch, playExplosion, toggleMuted, isMuted } from '../services/sound';
 
 const MAX_CHAT_MESSAGES = 50;
@@ -44,6 +46,7 @@ const Game = () => {
     const roomId = roomParam ? `${roomPrefix}${roomParam}` : null;
 
     const { t } = useTranslation();
+    const { isMobile, isPortrait, requestLandscape } = useDeviceLayout();
     const canvasRef = useRef(null);
     const engineRef = useRef(null);
     const sceneRef = useRef(null);
@@ -77,6 +80,7 @@ const Game = () => {
     const missilesRef = useRef({}); // Mallas de misiles teledirigidos en vuelo
     const missileIndicatorRef = useRef(null); // Badge 🚀 cuando llevas un misil armado
     const missileContainerRef = useRef(null); // AssetContainer del modelo missile.glb
+    const passLabelTextRef = useRef('PASS');
 
     const [showingEndMessage, setShowingEndMessage] = useState(false);
 
@@ -172,10 +176,6 @@ const Game = () => {
     const playerMetaRef = useRef({});
 
 
-    // Añadir detección de dispositivo móvil
-    const [isMobile, setIsMobile] = useState(false);
-
-
     const [chatExpanded, setChatExpanded] = useState(true);
     const [toast, setToast] = useState({ message: null, type: 'error' });
     const [kickoffEndsAt, setKickoffEndsAt] = useState(null);
@@ -183,10 +183,13 @@ const Game = () => {
     const [showMobileHelp, setShowMobileHelp] = useState(true);
 
     const sceneReadyRef = useRef(false);
-    const isMobileRef = useRef(false);
+    const isMobileRef = useRef(isMobile);
 
     useEffect(() => { sceneReadyRef.current = sceneReady; }, [sceneReady]);
     useEffect(() => { isMobileRef.current = isMobile; }, [isMobile]);
+    useEffect(() => {
+        passLabelTextRef.current = t('gameUI.passAvailable') || 'PASS';
+    }, [t]);
 
     const chatInputFocusRef = useRef(false);
     const chatMessagesRef = useRef(null);
@@ -233,6 +236,7 @@ const Game = () => {
         missilesRef,
         missileIndicatorRef,
         missileContainerRef,
+        passLabelTextRef,
     }), [setConnectedPlayers]);
 
     const onSceneReady = useCallback(() => setSceneReady(true), []);
@@ -389,6 +393,11 @@ const Game = () => {
 
     const handleJoinGame = (name) => {
         initAudio(); // Unlock Web Audio within the user gesture (click on Play).
+        if (isMobile) {
+            // Fullscreen/orientation lock only works from a user gesture on
+            // compatible browsers. Portrait overlay remains the universal fallback.
+            void requestLandscape();
+        }
         socketRef.current.emit('joinGame', { name: name.trim(), roomId });
         setPlayerName(name);
         setHasJoined(true);
@@ -457,15 +466,14 @@ const Game = () => {
         return () => clearTimeout(timer);
     }, [gameStarted, isMobile]);
 
-    useEffect(() => {
-        const checkMobile = () => {
-            setIsMobile(window.innerWidth <= 768);
-        };
+    const mobilePortraitBlocked = isMobile && isPortrait && gameStarted;
 
-        checkMobile();
-        window.addEventListener('resize', checkMobile);
-        return () => window.removeEventListener('resize', checkMobile);
-    }, []);
+    useEffect(() => {
+        if (!mobilePortraitBlocked) return;
+        resetMovement();
+        socketRef.current?.volatile.emit('playerMove', { x: 0, z: 0 });
+        socketRef.current?.emit('ballControl', { control: false });
+    }, [mobilePortraitBlocked, resetMovement]);
 
     // Añadir también un useEffect para manejar la visibilidad de la página
     useEffect(() => {
@@ -531,6 +539,12 @@ const Game = () => {
             userSelect: 'none',
             touchAction: 'none',
         }}>
+            <RotateDeviceOverlay
+                visible={mobilePortraitBlocked}
+                onRequestLandscape={requestLandscape}
+                t={t}
+            />
+
             <GameToast
                 message={toast.message}
                 type={toast.type}

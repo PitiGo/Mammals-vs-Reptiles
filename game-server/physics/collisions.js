@@ -32,16 +32,16 @@ export function getCharacterStats(characterType) {
 
 export const PASS_ASSIST_ANGLE_DEG = 20;
 export const PASS_ASSIST_MAX_DIST = 22;
-export const PASS_ASSIST_BLEND = 0.4;
 
 export const PLAYER_ACCEL = 28;
 export const PLAYER_DECEL = 22;
 
 /**
- * Blend shot direction toward a nearby teammate inside the pass cone.
- * @returns {{ x: number, z: number }} normalized XZ direction
+ * Select the teammate most closely aligned with the requested direction.
+ * The server uses this both for the preview sent to clients and for the
+ * authoritative release, so the indicator always matches the real pass.
  */
-export function findPassAssistDirection(
+export function findPassTarget(
   shooterId,
   shooterTeam,
   shooterPos,
@@ -50,35 +50,98 @@ export function findPassAssistDirection(
   {
     maxDist = PASS_ASSIST_MAX_DIST,
     angleDeg = PASS_ASSIST_ANGLE_DEG,
-    blend = PASS_ASSIST_BLEND,
+    now = 0,
   } = {},
 ) {
   const cosThreshold = Math.cos((angleDeg * Math.PI) / 180);
   const maxDistSq = maxDist * maxDist;
   let bestDot = -1;
-  let bestDir = null;
+  let bestDistSq = Infinity;
+  let bestTarget = null;
 
   for (const mate of players) {
     if (mate.id === shooterId || mate.team !== shooterTeam) continue;
+    if (now < (mate.stunnedUntil || 0)) continue;
     const dx = mate.position.x - shooterPos.x;
     const dz = mate.position.z - shooterPos.z;
     const distSq = dx * dx + dz * dz;
     if (distSq < 0.25 || distSq > maxDistSq) continue;
     const dist = Math.sqrt(distSq);
     const dot = (shotDir.x * dx + shotDir.z * dz) / dist;
-    if (dot >= cosThreshold && dot > bestDot) {
+    const moreAligned = dot > bestDot + 0.0001;
+    const sameAlignmentAndCloser = Math.abs(dot - bestDot) <= 0.0001 && distSq < bestDistSq;
+    if (dot >= cosThreshold && (moreAligned || sameAlignmentAndCloser)) {
       bestDot = dot;
-      bestDir = { x: dx / dist, z: dz / dist };
+      bestDistSq = distSq;
+      bestTarget = {
+        targetId: mate.id,
+        direction: { x: dx / dist, z: dz / dist },
+        distance: dist,
+      };
     }
   }
 
-  if (!bestDir) return shotDir;
+  return bestTarget;
+}
 
-  const bx = shotDir.x + (bestDir.x - shotDir.x) * blend;
-  const bz = shotDir.z + (bestDir.z - shotDir.z) * blend;
-  const len = Math.hypot(bx, bz);
-  if (len < 0.001) return shotDir;
-  return { x: bx / len, z: bz / len };
+/**
+ * Backwards-compatible direction helper. Passes now snap directly to the
+ * selected teammate instead of applying the old, invisible 40% correction.
+ */
+export function findPassAssistDirection(...args) {
+  const shotDir = args[3];
+  return findPassTarget(...args)?.direction || shotDir;
+}
+
+/**
+ * Pick a teammate who is meaningfully closer to the attacking goal.
+ * Used by bots to progress play instead of blindly dribbling from deep.
+ */
+export function findAdvancedTeammate(
+  passerId,
+  passerTeam,
+  passerPos,
+  goalX,
+  players,
+  {
+    maxDist = PASS_ASSIST_MAX_DIST,
+    minGoalGain = 4,
+    now = 0,
+  } = {},
+) {
+  const passerGoalDistance = Math.hypot(goalX - passerPos.x, passerPos.z);
+  const maxDistSq = maxDist * maxDist;
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (const mate of players) {
+    if (mate.id === passerId || mate.team !== passerTeam) continue;
+    if (now < (mate.stunnedUntil || 0)) continue;
+
+    const dx = mate.position.x - passerPos.x;
+    const dz = mate.position.z - passerPos.z;
+    const distSq = dx * dx + dz * dz;
+    if (distSq < 1 || distSq > maxDistSq) continue;
+
+    const distance = Math.sqrt(distSq);
+    const mateGoalDistance = Math.hypot(goalX - mate.position.x, mate.position.z);
+    const goalGain = passerGoalDistance - mateGoalDistance;
+    if (goalGain < minGoalGain) continue;
+
+    // Prioritize real territorial gain, using pass length as a tie-breaker.
+    const score = goalGain * 2 - distance * 0.2;
+    if (score > bestScore) {
+      bestScore = score;
+      best = {
+        targetId: mate.id,
+        direction: { x: dx / distance, z: dz / distance },
+        distance,
+        goalGain,
+      };
+    }
+  }
+
+  return best;
 }
 
 /** Ease player velocity toward target on the XZ plane (arcade inertia). */

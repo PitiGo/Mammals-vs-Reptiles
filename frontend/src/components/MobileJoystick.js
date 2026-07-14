@@ -22,15 +22,20 @@ const MobileJoystick = ({ onDirectionChange, onBallControlChange }) => {
             const screenWidth = window.innerWidth;
             const screenHeight = window.innerHeight;
             const minDimension = Math.min(screenWidth, screenHeight);
+            const landscape = screenWidth > screenHeight;
             
             // Escalar según el tamaño de pantalla
             const scale = Math.max(0.8, Math.min(1.2, minDimension / 400));
+            const joystickBase = landscape ? 118 : 140;
+            const stickBase = landscape ? 48 : 55;
+            const buttonBase = landscape ? 72 : 80;
+            const maxDistanceBase = landscape ? 38 : 45;
             
             setSizes({
-                joystickSize: Math.round(140 * scale),
-                stickSize: Math.round(55 * scale),
-                buttonSize: Math.round(80 * scale),
-                maxDistance: Math.round(45 * scale)
+                joystickSize: Math.round(joystickBase * scale),
+                stickSize: Math.round(stickBase * scale),
+                buttonSize: Math.round(buttonBase * scale),
+                maxDistance: Math.round(maxDistanceBase * scale)
             });
         };
 
@@ -164,8 +169,8 @@ const MobileJoystick = ({ onDirectionChange, onBallControlChange }) => {
                 ref={joystickRef}
                 style={{
                     position: 'fixed',
-                    bottom: '30px',
-                    left: '30px',
+                    bottom: 'max(18px, env(safe-area-inset-bottom))',
+                    left: 'max(18px, env(safe-area-inset-left))',
                     width: `${sizes.joystickSize}px`,
                     height: `${sizes.joystickSize}px`,
                     borderRadius: '50%',
@@ -261,8 +266,8 @@ const MobileJoystick = ({ onDirectionChange, onBallControlChange }) => {
                 onTouchCancel={handleKickEnd}
                 style={{
                     position: 'fixed',
-                    bottom: '30px',
-                    right: '30px',
+                    bottom: 'max(18px, env(safe-area-inset-bottom))',
+                    right: 'max(18px, env(safe-area-inset-right))',
                     width: `${sizes.buttonSize}px`,
                     height: `${sizes.buttonSize}px`,
                     borderRadius: '50%',
@@ -299,8 +304,8 @@ const MobileJoystick = ({ onDirectionChange, onBallControlChange }) => {
                 <svg
                     style={{
                         position: 'fixed',
-                        bottom: `${30 - 8}px`,
-                        right: `${30 - 8}px`,
+                        bottom: 'max(10px, calc(env(safe-area-inset-bottom) - 8px))',
+                        right: 'max(10px, calc(env(safe-area-inset-right) - 8px))',
                         width: `${sizes.buttonSize + 16}px`,
                         height: `${sizes.buttonSize + 16}px`,
                         zIndex: 1000,

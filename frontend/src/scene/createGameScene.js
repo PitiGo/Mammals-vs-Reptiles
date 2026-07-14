@@ -45,18 +45,38 @@ export function createGameScene(canvas, { refs, isMobileRef, onSceneReady, onLoa
             scene
         );
 
-        // Posicionar la cámara
-        camera.setPosition(new BABYLON.Vector3(0, 15, -20));
+        // Posicionar la cámara. En móvil se recalibra según el aspect ratio para
+        // aprovechar landscape y enseñar más campo sin deformar la imagen.
+        const applyCameraLayout = () => {
+            engine.resize();
+            if (mobile) {
+                const aspect = Math.max(0.5, engine.getRenderWidth() / Math.max(1, engine.getRenderHeight()));
+                const landscape = aspect >= 1;
+                camera.setPosition(landscape
+                    ? new BABYLON.Vector3(0, 22, -29)
+                    : new BABYLON.Vector3(0, 24, -28));
+                camera.fov = landscape ? 0.86 : 1.02;
+            } else {
+                camera.setPosition(new BABYLON.Vector3(0, 15, -20));
+            }
+        };
 
-        if (mobile) {
-            camera.setPosition(new BABYLON.Vector3(0, 20, -25)); // Vista más elevada
-            camera.fov = 0.8; // Campo de visión más amplio
-        }
+        applyCameraLayout();
         camera.setTarget(BABYLON.Vector3.Zero());
         camera.inputs.clear();
         camera.inertia = 0;
         camera.angularSensibilityX = 0;
         camera.angularSensibilityY = 0;
+
+        const handleViewportChange = () => applyCameraLayout();
+        window.addEventListener('resize', handleViewportChange);
+        window.addEventListener('orientationchange', handleViewportChange);
+        window.visualViewport?.addEventListener('resize', handleViewportChange);
+        scene.onDisposeObservable.add(() => {
+            window.removeEventListener('resize', handleViewportChange);
+            window.removeEventListener('orientationchange', handleViewportChange);
+            window.visualViewport?.removeEventListener('resize', handleViewportChange);
+        });
 
         // === CIELO COMO DOMO (SOLO ARRIBA) ===
         scene.clearColor = new BABYLON.Color4(0.53, 0.81, 0.92, 1.0); // Azul cielo como fallback
@@ -731,6 +751,28 @@ export function createGameScene(canvas, { refs, isMobileRef, onSceneReady, onLoa
                         rangeRing.position = localPlayer.position.clone();
                         rangeRing.position.y = 0.05;
                         rangeRing.isVisible = inRange && !refs.controlEffectsRef.current.controlRing.isVisible;
+                    }
+                }
+
+                const controlEffects = refs.controlEffectsRef.current;
+                const aimDirection = controlEffects.aimDirection;
+                if (localPlayer && aimDirection && controlEffects.aimArrowRoot?.isEnabled()) {
+                    controlEffects.aimArrowRoot.position.copyFrom(localPlayer.position);
+                    controlEffects.aimArrowRoot.position.y = 0.085;
+                    controlEffects.aimArrowRoot.rotation.y = Math.atan2(aimDirection.x, aimDirection.z);
+
+                    const pulse = 1 + Math.sin(performance.now() * 0.008) * 0.055;
+                    controlEffects.aimArrowRoot.scaling.set(pulse, 1, pulse);
+
+                    const passTarget = controlEffects.passTargetId
+                        ? refs.playersRef.current[controlEffects.passTargetId]
+                        : null;
+                    if (passTarget) {
+                        controlEffects.passTargetRing.position.copyFrom(passTarget.position);
+                        controlEffects.passTargetRing.position.y = 0.09;
+                        const ringPulse = 1 + Math.sin(performance.now() * 0.01) * 0.12;
+                        controlEffects.passTargetRing.scaling.set(ringPulse, ringPulse, ringPulse);
+                        controlEffects.passTargetRing.rotation.y += 0.025;
                     }
                 }
 

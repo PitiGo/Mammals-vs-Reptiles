@@ -6,6 +6,8 @@ import {
   isBallInGoal,
   getCharacterStats,
   findPassAssistDirection,
+  findPassTarget,
+  findAdvancedTeammate,
   stepPlayerVelocityXZ,
   FIELD_WIDTH,
   BALL_RADIUS,
@@ -40,7 +42,7 @@ test('getCharacterStats falls back to player defaults', () => {
   assert.equal(stats.speedMultiplier, getCharacterStats('player').speedMultiplier);
 });
 
-test('findPassAssistDirection blends toward teammate in cone', () => {
+test('findPassAssistDirection points directly toward teammate in cone', () => {
   const dir = findPassAssistDirection(
     'a',
     'left',
@@ -51,8 +53,9 @@ test('findPassAssistDirection blends toward teammate in cone', () => {
       { id: 'b', team: 'left', position: { x: 10, y: 0.5, z: 1 } },
     ],
   );
-  assert.ok(dir.x > 0.95);
-  assert.ok(dir.z > 0);
+  const expectedLength = Math.hypot(10, 1);
+  assert.ok(Math.abs(dir.x - 10 / expectedLength) < 0.0001);
+  assert.ok(Math.abs(dir.z - 1 / expectedLength) < 0.0001);
 });
 
 test('findPassAssistDirection ignores opponents', () => {
@@ -68,6 +71,91 @@ test('findPassAssistDirection ignores opponents', () => {
   );
   assert.equal(dir.x, 1);
   assert.equal(dir.z, 0);
+});
+
+test('findPassTarget chooses the most aligned teammate and returns its id', () => {
+  const target = findPassTarget(
+    'a',
+    'left',
+    { x: 0, y: 0.5, z: 0 },
+    { x: 1, z: 0 },
+    [
+      { id: 'a', team: 'left', position: { x: 0, y: 0.5, z: 0 } },
+      { id: 'near', team: 'left', position: { x: 6, y: 0.5, z: 1 } },
+      { id: 'aligned', team: 'left', position: { x: 12, y: 0.5, z: 0.2 } },
+    ],
+  );
+
+  assert.equal(target.targetId, 'aligned');
+  assert.ok(target.distance > 12);
+});
+
+test('findPassTarget ignores teammates outside cone or maximum distance', () => {
+  const target = findPassTarget(
+    'a',
+    'left',
+    { x: 0, y: 0.5, z: 0 },
+    { x: 1, z: 0 },
+    [
+      { id: 'wide', team: 'left', position: { x: 5, y: 0.5, z: 5 } },
+      { id: 'far', team: 'left', position: { x: 23, y: 0.5, z: 0 } },
+    ],
+  );
+
+  assert.equal(target, null);
+});
+
+test('findPassTarget ignores stunned teammates', () => {
+  const target = findPassTarget(
+    'a',
+    'left',
+    { x: 0, y: 0.5, z: 0 },
+    { x: 1, z: 0 },
+    [
+      {
+        id: 'stunned',
+        team: 'left',
+        position: { x: 8, y: 0.5, z: 0 },
+        stunnedUntil: 5000,
+      },
+    ],
+    { now: 1000 },
+  );
+
+  assert.equal(target, null);
+});
+
+test('findAdvancedTeammate selects a teammate with meaningful goal progress', () => {
+  const target = findAdvancedTeammate(
+    'carrier',
+    'left',
+    { x: -15, y: 0.5, z: 0 },
+    FIELD_WIDTH / 2,
+    [
+      { id: 'carrier', team: 'left', position: { x: -15, y: 0.5, z: 0 } },
+      { id: 'sideways', team: 'left', position: { x: -14, y: 0.5, z: 8 } },
+      { id: 'advanced', team: 'left', position: { x: -4, y: 0.5, z: 2 } },
+    ],
+  );
+
+  assert.equal(target.targetId, 'advanced');
+  assert.ok(target.goalGain >= 4);
+});
+
+test('findAdvancedTeammate rejects teammates without enough progress', () => {
+  const target = findAdvancedTeammate(
+    'carrier',
+    'right',
+    { x: 4, y: 0.5, z: 0 },
+    -FIELD_WIDTH / 2,
+    [
+      { id: 'carrier', team: 'right', position: { x: 4, y: 0.5, z: 0 } },
+      { id: 'level', team: 'right', position: { x: 2, y: 0.5, z: 3 } },
+      { id: 'behind', team: 'right', position: { x: 8, y: 0.5, z: 0 } },
+    ],
+  );
+
+  assert.equal(target, null);
 });
 
 test('stepPlayerVelocityXZ eases toward target speed', () => {

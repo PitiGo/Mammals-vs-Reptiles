@@ -101,6 +101,7 @@ export function createUpdateGameState(refs) {
     missilesRef,
     missileIndicatorRef,
     missileContainerRef,
+    passLabelTextRef,
   } = refs;
 
   // Tracks players whose mesh is being created asynchronously, to avoid
@@ -126,6 +127,8 @@ export function createUpdateGameState(refs) {
       controlRemainingMs,
       matchTimeLeftMs,
       shotCharge,
+      releaseDirection,
+      passTargetId,
       items,
       missiles,
     } = gameState;
@@ -441,6 +444,38 @@ export function createUpdateGameState(refs) {
         controlEffectsRef.current.stopParticles();
         controlEffectsRef.current.controlTimeText.text = '';
         controlEffectsRef.current.controlPlayerNameText.text = '';
+      }
+    }
+
+    // Preview autoritativa del lanzamiento local. La escena interpola y pulsa
+    // estos elementos a 60 fps; aquí solo actualizamos intención y visibilidad.
+    if (controlEffectsRef.current) {
+      const effects = controlEffectsRef.current;
+      const selfId = socketRef.current?.id;
+      const localHasControl = !!selfId
+        && controllingPlayerId === selfId
+        && releaseDirection
+        && Number.isFinite(releaseDirection.x)
+        && Number.isFinite(releaseDirection.z);
+
+      effects.aimDirection = localHasControl
+        ? { x: releaseDirection.x, z: releaseDirection.z }
+        : null;
+      effects.passTargetId = localHasControl ? passTargetId : null;
+      effects.aimArrowRoot?.setEnabled(localHasControl);
+      effects.setPassAim?.(localHasControl && !!passTargetId);
+
+      const targetMesh = localHasControl && passTargetId
+        ? playersRef.current[passTargetId]
+        : null;
+      effects.passTargetRing.isVisible = !!targetMesh;
+      effects.passTargetLabel.isVisible = !!targetMesh;
+      if (targetMesh) {
+        effects.passTargetLabel.linkWithMesh(targetMesh);
+        effects.passTargetLabel.linkOffsetY = isMobileView ? -52 : -82;
+        effects.passTargetText.text = passLabelTextRef?.current || 'PASS';
+      } else {
+        effects.passTargetLabel.linkWithMesh(null);
       }
     }
 

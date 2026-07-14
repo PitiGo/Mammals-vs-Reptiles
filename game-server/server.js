@@ -10,7 +10,8 @@ import {
   getCharacterStats,
   resolveBallGoalPostCollisions,
   isBallInGoal,
-  findPassAssistDirection,
+  findPassTarget,
+  findAdvancedTeammate,
   stepPlayerVelocityXZ,
   FIELD_WIDTH,
   FIELD_HEIGHT,
@@ -80,6 +81,7 @@ const io = new Server(httpServer, {
 const availableSalas = parseEnvList('ROOMS', ['room1', 'room2']);
 const PLAYER_RADIUS = 0.5;
 const PLAYER_SPEED = 5.5; // Velocidad base (u/s). Subida leve para compensar el campo más grande.
+const BALL_CARRIER_SPEED_MULTIPLIER = 0.88; // El portador pierde un 12%: permite alcanzarlo y presionarlo
 const BALL_MASS = 0.45;
 const PLAYER_MASS = 75; // Masa real
 const INV_BALL_MASS = 1 / BALL_MASS;
@@ -92,12 +94,15 @@ const BALL_CONTROL_RADIUS = 1.5;
 // --- Robo de balón / tackle ---
 const STEAL_GRACE_MS = 500;        // Tras ganar la posesión, no te la pueden robar (evita tira y afloja)
 const STEAL_VICTIM_LOCK_MS = 650;  // Tras perderla, la víctima no puede recuperarla de inmediato
-const STEAL_RADIUS_BONUS = 1.15;   // El alcance de robo es algo mayor que el radio de control
+const STEAL_RADIUS_BONUS = 1.25;   // Alcance de robo más generoso, igual al bonus de recogida
 const PICKUP_RADIUS_BONUS = 1.25;  // La recogida de balón suelto es algo más generosa que el control
 const BOT_STEAL_CHANCE = 0.10;     // Probabilidad por tick de que un bot en rango robe a un rival
 const BOT_STEAL_COOLDOWN_MS = 800; // Separación mínima entre intentos de robo de un bot
 const BALL_RELEASE_MIN = 13; // Minimum shot speed (quick tap)
 const BALL_RELEASE_MAX = 22; // Maximum shot speed (full charge) — reducido para que ni a máxima carga cruce todo el campo
+const PASS_RELEASE_MIN = 8;
+const PASS_RELEASE_MAX = 19;
+const PASS_SPEED_PER_UNIT = 0.9;
 const MAX_BALL_SPEED = 28; // Cap above release max; keeps shots readable
 const PHYSICS_TICK_RATE = 60; // Hz
 const STATE_EMIT_RATE = 20; // Hz — physics at 60, network at 20
@@ -138,13 +143,14 @@ const TEAM_CHARACTERS = {
 };
 
 // --- Bots / IA simple ---
-const BOT_TOUCH_RANGE = 1.4;        // Distancia para tocar/golpear el balón
-const BOT_TOUCH_COOLDOWN_MS = 320;  // Separación mínima entre toques (regate fluido)
 const BOT_SHOT_COOLDOWN_MS = 900;   // Separación mínima entre disparos potentes
-const BOT_DEFEND_BIAS = 0.35;       // Cuánto retrocede un bot lejano hacia su campo
 const BOT_SHOOT_DISTANCE = 14;      // Solo dispara a puerta si está a <= esta distancia del arco rival
-const BOT_DRIBBLE_SPEED = 9;        // Toque corto de conducción (con fricción → el balón se queda cerca)
 const BOT_SHOT_SPEED = 26;          // Disparo a puerta (sin fricción durante la ventana de disparo)
+const BOT_RECEIVE_SETTLE_MS = 900;  // Tras recibir, acompaña el balón antes de decidir pase/disparo
+const BOT_PASS_COOLDOWN_MS = 1200;
+const BOT_PASS_MIN_GOAL_GAIN = 4;   // Solo pasa si el compañero progresa claramente hacia portería
+const BOT_SUPPORT_AHEAD = 7;
+const BOT_SUPPORT_LATERAL = 4;
 
 const gameStates = {
   WAITING: 'waiting',
@@ -725,13 +731,9 @@ function removeAllBots(state) {
   });
 }
 
-// IA por tick: los bots conducen el balón hacia la portería rival con toques
-// cortos y solo disparan (con imprecisión) cuando están cerca del arco. Así el
-// balón no cruza el campo de una sola patada y los goles son más evitables.
+// IA por tick: posesión real, apoyos, pases de progresión y disparo cerca del arco.
+// Los bots estabilizan cada recepción antes de decidir para evitar patadas instantáneas.
 function updateBotAI(roomId, state) {
-  const controller = getController(state);
-  const controlledByHuman = !!(controller && !controller.isBot);
-
   const ball = state.ballPosition;
   const now = performance.now();
   state.players.forEach((bot) => {
@@ -781,77 +783,158 @@ function updateBotAI(roomId, state) {
       }
     }
 
+    const goalX = bot.team === 'left' ? FIELD_WIDTH / 2 : -FIELD_WIDTH / 2;
+    const attackSign = bot.team === 'left' ? 1 : -1;
+    const moveToward = (x, z, scale = 1) => {
+      const dx = x - bot.position.x;
+      const dz = z - bot.position.z;
+      const length = Math.hypot(dx, dz);
+      if (length > 0.001) {
+        move.moveDirection.copyFromFloats((dx / length) * scale, 0, (dz / length) * scale);
+      } else {
+        move.moveDirection.set(0, 0, 0);
+      }
+      return length;
+    };
+
     const toBallX = ball.x - bot.position.x;
     const toBallZ = ball.z - bot.position.z;
     const dist = Math.hypot(toBallX, toBallZ);
+    const controller = getController(state);
 
-    // Dirección base: perseguir el balón.
-    if (dist > 0.001) {
-      move.moveDirection.copyFromFloats(toBallX / dist, 0, toBallZ / dist);
-    } else {
-      move.moveDirection.set(0, 0, 0);
-    }
+    // Portador: conduce hacia portería, busca un compañero adelantado y solo
+    // remata después de haber estabilizado la recepción.
+    if (controller?.id === bot.id) {
+      bot.wantsControl = true;
+      bot.receivingPassUntil = 0;
+      moveToward(goalX, 0);
 
-    // Si el balón está lejos en su propio campo, frena un poco (postura defensiva).
-    const ownHalfSign = bot.team === 'left' ? -1 : 1;
-    const ballInOwnHalf = Math.sign(ball.x) === ownHalfSign;
-    if (dist > 6 && !ballInOwnHalf) {
-      move.moveDirection.scaleInPlace(1 - BOT_DEFEND_BIAS);
+      const heldMs = now - (bot.ballControlTime || now);
+      if (heldMs < BOT_RECEIVE_SETTLE_MS) return;
+
+      const distToGoal = Math.hypot(goalX - bot.position.x, bot.position.z);
+      const passTarget = findAdvancedTeammate(
+        bot.id,
+        bot.team,
+        bot.position,
+        goalX,
+        Array.from(state.players.values()),
+        { minGoalGain: BOT_PASS_MIN_GOAL_GAIN, now },
+      );
+
+      if (
+        passTarget
+        && distToGoal > BOT_SHOOT_DISTANCE
+        && now - (bot.lastKickTime || 0) >= BOT_PASS_COOLDOWN_MS
+      ) {
+        const target = state.players.get(passTarget.targetId);
+        const direction = new Vector3(passTarget.direction.x, 0, passTarget.direction.z);
+        const speed = Math.max(
+          PASS_RELEASE_MIN,
+          Math.min(PASS_RELEASE_MAX, passTarget.distance * PASS_SPEED_PER_UNIT),
+        );
+        bot.isControllingBall = false;
+        bot.wantsControl = false;
+        state.ballVelocity = direction.scale(speed);
+        state.ballLastShotTime = now;
+        state.lastShooter = { id: bot.id, team: bot.team };
+        bot.lastKickTime = now;
+        const sep = (getCharacterStats(bot.characterType).radius || PLAYER_RADIUS) + BALL_RADIUS + 0.8;
+        state.ballPosition.addInPlace(direction.scale(sep));
+        if (target?.isBot) {
+          target.receivingPassUntil = now + 2500;
+          target.wantsControl = true;
+        }
+        log(`[${roomId}] BOT PASS: ${bot.name} -> ${target?.name || passTarget.targetId}.`);
+        return;
+      }
+
+      if (distToGoal <= BOT_SHOOT_DISTANCE && now - (bot.lastKickTime || 0) >= BOT_SHOT_COOLDOWN_MS) {
+        const aimX = goalX - bot.position.x;
+        const aimZ = -bot.position.z;
+        const aimLength = Math.hypot(aimX, aimZ) || 1;
+        const direction = new Vector3(aimX / aimLength, 0, aimZ / aimLength);
+        const stats = getCharacterStats(bot.characterType);
+        bot.isControllingBall = false;
+        bot.wantsControl = false;
+        state.ballVelocity = direction.scale(BOT_SHOT_SPEED * (stats.shotMultiplier || 1));
+        state.ballLastShotTime = now;
+        state.lastShooter = { id: bot.id, team: bot.team };
+        bot.lastKickTime = now;
+        const sep = (stats.radius || PLAYER_RADIUS) + BALL_RADIUS + 0.8;
+        state.ballPosition.addInPlace(direction.scale(sep));
+      }
+      return;
     }
 
     // Robo/presión: si un RIVAL controla el balón y el bot está encima, intenta
-    // quitárselo (lo deja suelto a sus pies para luego conducir). Da interacción
-    // defensiva también frente a jugadores humanos.
+    // quitárselo. Al lograrlo obtiene posesión real y puede conducir/pasar.
     if (controller && controller.team !== bot.team) {
+      bot.wantsControl = true;
+      moveToward(ball.x, ball.z);
       const reach = (getCharacterStats(bot.characterType).controlRadius || BALL_CONTROL_RADIUS) * STEAL_RADIUS_BONUS;
       if (dist <= reach
         && now >= (controller.controlProtectedUntil || 0)
         && now - (bot.lastStealTime || 0) >= BOT_STEAL_COOLDOWN_MS
         && Math.random() < BOT_STEAL_CHANCE) {
-        controller.isControllingBall = false;
         controller.controlLockUntil = now + STEAL_VICTIM_LOCK_MS;
         bot.lastStealTime = now;
-        // Empujar el balón suelto hacia el bot para que lo recoja/conduzca.
-        const len = dist || 1;
-        state.ballVelocity.set((toBallX / len) * 4, 0, (toBallZ / len) * 4);
+        grantControl(state, bot);
         io.to(roomId).emit('ballSteal', { byId: bot.id, fromId: controller.id, x: round2(ball.x), z: round2(ball.z) });
         metrics.ballStealsTotal.inc({ room: roomId, by: 'bot' });
       }
-
-      return; // mientras un rival controla, el bot presiona pero no "golpea".
+      return;
     }
 
-    // Tocar el balón solo si está al alcance y no lo controla un humano.
-    if (dist >= BOT_TOUCH_RANGE || controlledByHuman) return;
+    // Si controla un compañero, abrirse por delante y a un costado para ofrecer
+    // una línea de pase en vez de amontonarse sobre el balón.
+    if (controller?.team === bot.team) {
+      bot.wantsControl = false;
+      const lateralSign = bot.id.localeCompare(controller.id) >= 0 ? 1 : -1;
+      const supportX = Math.max(
+        -FIELD_WIDTH / 2 + 2,
+        Math.min(FIELD_WIDTH / 2 - 2, controller.position.x + attackSign * BOT_SUPPORT_AHEAD),
+      );
+      const supportZ = Math.max(
+        -FIELD_HEIGHT / 2 + 2,
+        Math.min(FIELD_HEIGHT / 2 - 2, controller.position.z + lateralSign * BOT_SUPPORT_LATERAL),
+      );
+      moveToward(supportX, supportZ, 0.9);
+      return;
+    }
 
-    const goalX = bot.team === 'left' ? FIELD_WIDTH / 2 : -FIELD_WIDTH / 2;
-    const distToGoal = Math.hypot(goalX - ball.x, ball.z);
-    const stats = getCharacterStats(bot.characterType);
-    const isShot = distToGoal <= BOT_SHOOT_DISTANCE;
-    const cooldown = isShot ? BOT_SHOT_COOLDOWN_MS : BOT_TOUCH_COOLDOWN_MS;
-    if ((now - (bot.lastKickTime || 0)) < cooldown) return;
+    // Balón libre: el receptor previsto tiene prioridad; si no, lo persigue el
+    // bot de su equipo más cercano y los demás buscan posición de apoyo.
+    let preferredBot = null;
+    let closestDistanceSq = Infinity;
+    state.players.forEach((candidate) => {
+      if (!candidate.isBot || candidate.team !== bot.team || now < (candidate.stunnedUntil || 0)) return;
+      if ((candidate.receivingPassUntil || 0) > now) {
+        preferredBot = candidate;
+        closestDistanceSq = -1;
+        return;
+      }
+      if (closestDistanceSq < 0) return;
+      const dx = ball.x - candidate.position.x;
+      const dz = ball.z - candidate.position.z;
+      const distanceSq = dx * dx + dz * dz;
+      if (distanceSq < closestDistanceSq) {
+        closestDistanceSq = distanceSq;
+        preferredBot = candidate;
+      }
+    });
 
-    // Apuntar al centro del arco rival (preciso, sin imprecisión deliberada).
-    const aimX = goalX - ball.x;
-    const aimZ = (0 - ball.z);
-    const aimLen = Math.hypot(aimX, aimZ) || 1;
-    const aim = new Vector3(aimX / aimLen, 0, aimZ / aimLen);
-
-    if (isShot) {
-      // Disparo a puerta: rápido y con ventana sin fricción para que llegue.
-      const speed = BOT_SHOT_SPEED * (stats.shotMultiplier || 1);
-      state.ballVelocity = aim.scale(speed);
-      state.ballLastShotTime = now; // activa la ventana sin fricción
+    if (preferredBot?.id === bot.id) {
+      bot.wantsControl = true;
+      moveToward(ball.x, ball.z);
     } else {
-      // Conducción: toque corto. NO marca ballLastShotTime, así la fricción frena
-      // el balón y se queda cerca para el siguiente toque (no cruza el campo).
-      const speed = BOT_DRIBBLE_SPEED * (0.85 + Math.random() * 0.3);
-      state.ballVelocity = aim.scale(speed);
+      bot.wantsControl = false;
+      moveToward(
+        ball.x + attackSign * BOT_SUPPORT_AHEAD,
+        Math.max(-FIELD_HEIGHT / 2 + 2, Math.min(FIELD_HEIGHT / 2 - 2, ball.z + BOT_SUPPORT_LATERAL)),
+        0.8,
+      );
     }
-    state.lastShooter = { id: bot.id, team: bot.team };
-    bot.lastKickTime = now;
-    const sep = (stats.radius || PLAYER_RADIUS) + BALL_RADIUS + 0.5;
-    state.ballPosition.addInPlace(aim.scale(sep));
   });
 }
 
@@ -961,6 +1044,74 @@ function getController(state) {
   let controller = null;
   state.players.forEach((p) => { if (p.isControllingBall) controller = p; });
   return controller;
+}
+
+// Calcula una sola intención autoritativa para preview y lanzamiento real.
+// Si hay un compañero dentro del cono, la dirección apunta directamente a él.
+function getReleaseIntent(state, player, now = performance.now()) {
+  const forward = new Vector3(0, 0, 1);
+  const rotationMatrix = new Matrix();
+  player.rotation.toRotationMatrix(rotationMatrix);
+  let direction = Vector3.TransformNormal(forward, rotationMatrix);
+  direction.y = 0;
+  if (direction.lengthSquared() > 0.001) {
+    direction.normalize();
+  } else {
+    direction.copyFromFloats(0, 0, 1);
+  }
+
+  const movement = state.playerMovements.get(player.id)?.moveDirection || Vector3.Zero();
+  if (movement.lengthSquared() > 0.01) {
+    direction = direction.add(movement).normalize();
+    direction.y = 0;
+  }
+
+  const passTarget = findPassTarget(
+    player.id,
+    player.team,
+    player.position,
+    { x: direction.x, z: direction.z },
+    Array.from(state.players.values()),
+    { now },
+  );
+
+  if (passTarget) {
+    direction.copyFromFloats(passTarget.direction.x, 0, passTarget.direction.z);
+  }
+
+  return { direction, passTarget };
+}
+
+function releaseControlledBall(roomId, state, player, { forceMaxShot = false } = {}) {
+  const now = performance.now();
+  const { direction, passTarget } = getReleaseIntent(state, player, now);
+  const stats = getCharacterStats(player.characterType);
+  const controlHeldSec = Math.min(3, Math.max(0, (now - player.ballControlTime) / 1000));
+  const charge = forceMaxShot ? 1 : controlHeldSec / 3;
+  const shotSpeed = (
+    BALL_RELEASE_MIN + (BALL_RELEASE_MAX - BALL_RELEASE_MIN) * charge
+  ) * stats.shotMultiplier;
+  const passSpeed = passTarget
+    ? Math.max(PASS_RELEASE_MIN, Math.min(PASS_RELEASE_MAX, passTarget.distance * PASS_SPEED_PER_UNIT))
+    : null;
+  const speed = passSpeed ?? shotSpeed;
+
+  state.ballVelocity = direction.scale(speed);
+  state.ballLastShotTime = now;
+  state.lastShooter = { id: player.id, team: player.team };
+
+  const separationDist = (stats.radius || PLAYER_RADIUS) + BALL_RADIUS + 0.8;
+  state.ballPosition.addInPlace(direction.clone().scale(separationDist));
+  player.lastKickTime = now;
+
+  if (passTarget) {
+    const target = state.players.get(passTarget.targetId);
+    log(`[${roomId}] PASS: ${player.name} -> ${target?.name || passTarget.targetId} (${speed.toFixed(1)}).`);
+  } else {
+    log(`[${roomId}] SHOT: Speed ${speed.toFixed(1)}.`);
+  }
+
+  return { passTargetId: passTarget?.targetId || null, speed };
 }
 
 // Otorga el control del balón a un jugador, limpiando cualquier otro control y
@@ -1103,7 +1254,8 @@ function updateGamePhysics(roomId, state) {
     const speedFactor = player.isSprinting ? SPEED_BOOST_MULTIPLIER : 1;
 
     // Aceleración / frenado suave hacia la velocidad objetivo (inercia arcade)
-    const maxSpeed = PLAYER_SPEED * stats.speedMultiplier * speedFactor;
+    const carrierFactor = player.isControllingBall ? BALL_CARRIER_SPEED_MULTIPLIER : 1;
+    const maxSpeed = PLAYER_SPEED * stats.speedMultiplier * speedFactor * carrierFactor;
     const targetX = movement.moveDirection.x * maxSpeed;
     const targetZ = movement.moveDirection.z * maxSpeed;
     stepPlayerVelocityXZ(player.velocity, targetX, targetZ, PHYSICS_DT);
@@ -1241,25 +1393,11 @@ function updateGamePhysics(roomId, state) {
       }
 
       const controlDuration = (performance.now() - player.ballControlTime) / 1000;
-      if (controlDuration >= 3) {
+      if (controlDuration >= 3 && !player.isBot) {
         log(`[${roomId}] ${player.name} libera disparo a máxima carga (control expirado).`);
         player.isControllingBall = false;
         playerCurrentlyControllingId = null; // Liberar control
-        // Carga máxima: dispara con la máxima potencia en la dirección de mira.
-        const forward = new Vector3(0, 0, 1);
-        const rotationMatrix = new Matrix();
-        player.rotation.toRotationMatrix(rotationMatrix);
-        const worldForward = Vector3.TransformNormal(forward, rotationMatrix).normalize();
-        worldForward.y = 0;
-        if (worldForward.lengthSquared() > 0.001) worldForward.normalize();
-        const fullStats = getCharacterStats(player.characterType);
-        const fullSpeed = BALL_RELEASE_MAX * fullStats.shotMultiplier;
-        state.ballVelocity = worldForward.scale(fullSpeed);
-        state.ballLastShotTime = performance.now();
-        state.lastShooter = { id: player.id, team: player.team };
-        player.lastKickTime = performance.now();
-        const sep = (fullStats.radius || PLAYER_RADIUS) + BALL_RADIUS + 0.8;
-        state.ballPosition.addInPlace(worldForward.clone().scale(sep));
+        releaseControlledBall(roomId, state, player, { forceMaxShot: true });
       } else {
         // Mantener pelota al frente
         const forward = new Vector3(0, 0, 1); // Local Z+
@@ -1418,12 +1556,21 @@ function emitGameState(roomId, state) {
   let controllingPlayerId = null;
   let controlRemainingMs = 0;
   let shotCharge = 0;
+  let releaseDirection = null;
+  let passTargetId = null;
+  const stateNow = performance.now();
   state.players.forEach(p => {
     if (p.isControllingBall) {
       controllingPlayerId = p.id;
-      const elapsed = performance.now() - p.ballControlTime;
+      const elapsed = stateNow - p.ballControlTime;
       controlRemainingMs = Math.round(Math.max(0, 3000 - elapsed));
       shotCharge = Math.round(Math.min(1, Math.max(0, elapsed / 3000)) * 100) / 100;
+      const intent = getReleaseIntent(state, p, stateNow);
+      releaseDirection = {
+        x: round2(intent.direction.x),
+        z: round2(intent.direction.z),
+      };
+      passTargetId = intent.passTarget?.targetId || null;
     }
   });
 
@@ -1436,6 +1583,8 @@ function emitGameState(roomId, state) {
     controllingPlayerId,
     controlRemainingMs,
     shotCharge,
+    releaseDirection,
+    passTargetId,
     items: state.items,
     missiles: state.missiles.map((m) => ({ id: m.id, x: m.x, z: m.z })),
   };
@@ -1838,53 +1987,7 @@ io.on('connection', (socket) => {
       if (player.isControllingBall) {
         player.isControllingBall = false;
         log(`[${currentRoomId}] ${player.name} SUELTA balón (disparo).`);
-
-        // Calcular dirección del disparo (hacia donde mira el jugador)
-        const forward = new Vector3(0, 0, 1); // Z local
-        const rotationMatrix = new Matrix();
-        player.rotation.toRotationMatrix(rotationMatrix);
-        let worldForward = Vector3.TransformNormal(forward, rotationMatrix).normalize();
-
-        // Mezclar con dirección de movimiento si existe para mayor control
-        const movement = (salaStates[currentRoomId].playerMovements.get(socket.id)?.moveDirection) || Vector3.Zero();
-        if (movement.lengthSquared() > 0.01) {
-          worldForward = worldForward.add(movement).normalize();
-        }
-        worldForward.y = 0;
-        if (worldForward.lengthSquared() > 0.001) worldForward.normalize();
-
-        const assisted = findPassAssistDirection(
-          player.id,
-          player.team,
-          player.position,
-          { x: worldForward.x, z: worldForward.z },
-          Array.from(state.players.values()),
-        );
-        worldForward.x = assisted.x;
-        worldForward.z = assisted.z;
-        worldForward.y = 0;
-
-        // Calculate shot speed
-        const nowTs = performance.now();
-        const controlHeldSec = Math.min(3, Math.max(0, (nowTs - player.ballControlTime) / 1000));
-        const t = controlHeldSec / 3; // 0..1
-        const stats = getCharacterStats(player.characterType);
-        const speed = (BALL_RELEASE_MIN + (BALL_RELEASE_MAX - BALL_RELEASE_MIN) * t) * stats.shotMultiplier;
-
-        // Assign velocity
-        state.ballVelocity = worldForward.scale(speed);
-        state.ballLastShotTime = nowTs;
-        state.lastShooter = { id: player.id, team: player.team }; // Atribución de gol
-
-        // KEY CHANGE: Aggressive separation
-        // Push ball 0.8 units (before 0.1) to ensure it doesn't touch the body
-        const separationDist = (getCharacterStats(player.characterType).radius || PLAYER_RADIUS) + BALL_RADIUS + 0.8;
-        state.ballPosition.addInPlace(worldForward.clone().scale(separationDist));
-
-        // KEY CHANGE: Register kick time
-        player.lastKickTime = nowTs;
-
-        log(`[${currentRoomId}] SHOT: Speed ${speed.toFixed(1)}`);
+        releaseControlledBall(currentRoomId, state, player);
       }
     }
     // El estado se emitirá en el siguiente tick de emitGameState
