@@ -9,6 +9,7 @@ import {
   findPassTarget,
   findAdvancedTeammate,
   stepPlayerVelocityXZ,
+  isWithinStealReach,
   FIELD_WIDTH,
   BALL_RADIUS,
 } from './collisions.js';
@@ -163,4 +164,20 @@ test('stepPlayerVelocityXZ eases toward target speed', () => {
   stepPlayerVelocityXZ(vel, 5, 0, 1 / 60);
   assert.ok(vel.x > 0 && vel.x < 5);
   assert.equal(vel.y, 0);
+});
+
+test('isWithinStealReach allows tackle from behind when pressing the carrier', () => {
+  const stealer = { characterType: 'player', position: { x: 0, z: -1.0 } };
+  const controller = { characterType: 'player', position: { x: 0, z: 0 } };
+  const ball = { x: 0, z: 1.05 }; // balón adelante del portador
+
+  assert.equal(isWithinStealReach(stealer, controller, ball), true);
+});
+
+test('isWithinStealReach still requires real proximity to ball or carrier', () => {
+  const stealer = { characterType: 'player', position: { x: 0, z: -6 } };
+  const controller = { characterType: 'player', position: { x: 0, z: 0 } };
+  const ball = { x: 0, z: 1.05 };
+
+  assert.equal(isWithinStealReach(stealer, controller, ball), false);
 });

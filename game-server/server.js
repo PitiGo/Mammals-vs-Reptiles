@@ -13,6 +13,10 @@ import {
   findPassTarget,
   findAdvancedTeammate,
   stepPlayerVelocityXZ,
+  isWithinStealReach,
+  BALL_CONTROL_RADIUS,
+  STEAL_RADIUS_BONUS,
+  PICKUP_RADIUS_BONUS,
   FIELD_WIDTH,
   FIELD_HEIGHT,
   GOAL_Z_MIN,
@@ -90,12 +94,9 @@ const FRICTION = 0.98; // Arcade feel: less sliding on the pitch
 const RESTITUTION = 0.6; // Coeficiente de restitución (elasticidad)
 const MAX_PLAYERS_PER_TEAM = 3;
 const GOALS_TO_WIN = 3;
-const BALL_CONTROL_RADIUS = 1.5;
 // --- Robo de balón / tackle ---
-const STEAL_GRACE_MS = 500;        // Tras ganar la posesión, no te la pueden robar (evita tira y afloja)
+const STEAL_GRACE_MS = 400;        // Protección breve tras ganar posesión (evita tira y afloja instantáneo)
 const STEAL_VICTIM_LOCK_MS = 650;  // Tras perderla, la víctima no puede recuperarla de inmediato
-const STEAL_RADIUS_BONUS = 1.35;   // Alcance de robo visible y un poco más generoso que la recogida
-const PICKUP_RADIUS_BONUS = 1.25;  // La recogida de balón suelto es algo más generosa que el control
 const BOT_STEAL_CHANCE = 0.10;     // Probabilidad por tick de que un bot en rango robe a un rival
 const BOT_STEAL_COOLDOWN_MS = 800; // Separación mínima entre intentos de robo de un bot
 const BALL_RELEASE_MIN = 13; // Minimum shot speed (quick tap)
@@ -891,8 +892,7 @@ function updateBotAI(roomId, state) {
     if (controller && controller.team !== bot.team) {
       bot.wantsControl = true;
       moveToward(ball.x, ball.z);
-      const reach = (getCharacterStats(bot.characterType).controlRadius || BALL_CONTROL_RADIUS) * STEAL_RADIUS_BONUS;
-      if (dist <= reach
+      if (isWithinStealReach(bot, controller, state.ballPosition)
         && now >= (controller.controlProtectedUntil || 0)
         && now - (bot.lastStealTime || 0) >= BOT_STEAL_COOLDOWN_MS
         && Math.random() < BOT_STEAL_CHANCE) {
@@ -1162,11 +1162,7 @@ function tryStealBall(roomId, state, stealer) {
   if (now < (controller.controlProtectedUntil || 0)) return false;
   if (now < (stealer.stunnedUntil || 0)) return false;
 
-  const stats = getCharacterStats(stealer.characterType);
-  const reach = (stats.controlRadius || BALL_CONTROL_RADIUS) * STEAL_RADIUS_BONUS;
-  const dx = state.ballPosition.x - stealer.position.x;
-  const dz = state.ballPosition.z - stealer.position.z;
-  if (dx * dx + dz * dz > reach * reach) return false;
+  if (!isWithinStealReach(stealer, controller, state.ballPosition)) return false;
 
   controller.isControllingBall = false;
   controller.controlLockUntil = now + STEAL_VICTIM_LOCK_MS;
@@ -1443,11 +1439,15 @@ function updateGamePhysics(roomId, state) {
       playerCurrentlyControllingId !== player.id &&
       player.wantsControl &&
       now >= (player.stunnedUntil || 0) &&
-      now >= (player.controlLockUntil || 0) &&
-      distSq < (controlRadius * STEAL_RADIUS_BONUS) * (controlRadius * STEAL_RADIUS_BONUS)
+      now >= (player.controlLockUntil || 0)
     ) {
       const controller = state.players.get(playerCurrentlyControllingId);
-      if (controller && controller.team !== player.team && tryStealBall(roomId, state, player)) {
+      if (
+        controller
+        && controller.team !== player.team
+        && isWithinStealReach(player, controller, state.ballPosition)
+        && tryStealBall(roomId, state, player)
+      ) {
         playerCurrentlyControllingId = player.id;
       }
     }

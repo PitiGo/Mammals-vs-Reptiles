@@ -25,6 +25,27 @@ export function getPickupRadius(characterType) {
   return (stats.controlRadius || BALL_CONTROL_RADIUS) * PICKUP_RADIUS_BONUS;
 }
 
+export function getTackleReach(stealerType, controllerType, bonus = STEAL_RADIUS_BONUS) {
+  const stealReach = getStealReach(stealerType, bonus);
+  const stealerR = getCharacterStats(stealerType).radius || 0.5;
+  const controllerR = getCharacterStats(controllerType).radius || 0.5;
+  return stealReach + stealerR + controllerR * 0.55;
+}
+
+export function isWithinStealReach(stealerPos, stealerType, controllerPos, controllerType, ballPos) {
+  const stealReach = getStealReach(stealerType);
+  const stealReachSq = stealReach * stealReach;
+
+  const bdx = ballPos.x - stealerPos.x;
+  const bdz = ballPos.z - stealerPos.z;
+  if (bdx * bdx + bdz * bdz <= stealReachSq) return true;
+
+  const cdx = controllerPos.x - stealerPos.x;
+  const cdz = controllerPos.z - stealerPos.z;
+  const tackleReach = getTackleReach(stealerType, controllerType);
+  return cdx * cdx + cdz * cdz <= tackleReach * tackleReach;
+}
+
 /** Visual Y offset for player meshes (matches server collision radius). */
 export function getPlayerVisualY(characterType) {
   return getCharacterStats(characterType).radius;

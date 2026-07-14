@@ -7,7 +7,7 @@ import * as CANNON from 'cannon-es';
 import CharacterManager from '../services/characterManager';
 import { createScoreDisplay } from './scoreDisplay';
 import { createControlEffect } from './createControlEffect';
-import { getStealRadius, getPickupRadius } from '../constants/characterStats';
+import { getPickupRadius, getTackleReach, isWithinStealReach } from '../constants/characterStats';
 import { createProceduralField, FIELD_WIDTH, FIELD_HEIGHT } from './createField';
 import { createGoal } from './createGoal';
 import { upgradeMissileItemMeshes } from './updateGameState';
@@ -782,13 +782,23 @@ export function createGameScene(canvas, { refs, isMobileRef, onSceneReady, onLoa
                         const distSq = dx * dx + dz * dz;
 
                         if (rivalControls) {
-                            const stealRadius = getStealRadius(charType);
+                            const controllerMesh = refs.playersRef.current[controllingId];
+                            const controllerType = refs.playerMetaRef.current[controllingId]?.characterType || 'player';
+                            const ballPos = refs.ballRef.current.position;
+                            const inStealRange = controllerMesh && isWithinStealReach(
+                                localPlayer.position,
+                                charType,
+                                controllerMesh.position,
+                                controllerType,
+                                ballPos,
+                            );
+                            const tackleReach = getTackleReach(charType, controllerType);
                             controlEffects.stealRing.position.copyFrom(localPlayer.position);
                             controlEffects.stealRing.position.y = 0.06;
                             controlEffects.setActionRing(
                                 controlEffects.stealRing,
-                                stealRadius,
-                                distSq <= stealRadius * stealRadius,
+                                tackleReach,
+                                inStealRange,
                             );
                             controlEffects.stealRing.isVisible = true;
                             controlEffects.stealRing.rotation.y += 0.03;

@@ -30,6 +30,37 @@ export function getCharacterStats(characterType) {
   return CHARACTER_STATS[characterType] || CHARACTER_STATS.player;
 }
 
+export const BALL_CONTROL_RADIUS = 1.5;
+export const STEAL_RADIUS_BONUS = 1.35;
+export const PICKUP_RADIUS_BONUS = 1.25;
+
+export function getStealReach(characterType, bonus = STEAL_RADIUS_BONUS) {
+  const stats = getCharacterStats(characterType);
+  return (stats.controlRadius || BALL_CONTROL_RADIUS) * bonus;
+}
+
+/** Alcance de entrada al portador: robar pegado por detrás aunque el balón esté adelante. */
+export function getTackleReach(stealerType, controllerType, bonus = STEAL_RADIUS_BONUS) {
+  const stealReach = getStealReach(stealerType, bonus);
+  const stealerR = getCharacterStats(stealerType).radius || 0.5;
+  const controllerR = getCharacterStats(controllerType).radius || 0.5;
+  return stealReach + stealerR + controllerR * 0.55;
+}
+
+export function isWithinStealReach(stealer, controller, ballPosition, bonus = STEAL_RADIUS_BONUS) {
+  const stealReach = getStealReach(stealer.characterType, bonus);
+  const stealReachSq = stealReach * stealReach;
+
+  const bdx = ballPosition.x - stealer.position.x;
+  const bdz = ballPosition.z - stealer.position.z;
+  if (bdx * bdx + bdz * bdz <= stealReachSq) return true;
+
+  const cdx = controller.position.x - stealer.position.x;
+  const cdz = controller.position.z - stealer.position.z;
+  const tackleReach = getTackleReach(stealer.characterType, controller.characterType, bonus);
+  return cdx * cdx + cdz * cdz <= tackleReach * tackleReach;
+}
+
 export const PASS_ASSIST_ANGLE_DEG = 20;
 export const PASS_ASSIST_MAX_DIST = 22;
 
