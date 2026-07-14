@@ -8,8 +8,8 @@ const CharacterThumbnail = ({ characterId, teamColor, compact }) => {
 
   const baseStyle = compact
     ? {
-      width: '64px',
-      height: '64px',
+      width: '48px',
+      height: '48px',
       borderRadius: '8px',
       marginBottom: 0,
       flexShrink: 0,
@@ -302,16 +302,20 @@ const TeamSelectionScreen = ({
           </h2>
         </div>
 
-        {/* Contenido existente */}
+        {/* Contenido: en móvil apaisado con equipo elegido pasa a dos columnas
+            (equipos a la izquierda, personaje y "listo" a la derecha) para que
+            todo quepa sin scroll. */}
         <div style={{
-          display: 'flex',
+          display: compact && currentTeam ? 'grid' : 'flex',
+          gridTemplateColumns: compact && currentTeam ? '1fr 1.2fr' : undefined,
+          alignItems: compact && currentTeam ? 'start' : undefined,
           flexDirection: 'column',
           gap: compact ? '0.6rem' : '1rem',
         }}>
           {/* Equipos */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
+            gridTemplateColumns: compact && currentTeam ? '1fr' : '1fr 1fr',
             gap: compact ? '0.6rem' : '1rem',
           }}>
             {/* Equipo Mammals */}
@@ -524,7 +528,11 @@ const TeamSelectionScreen = ({
 
           {/* Selección de Personaje y Botón Ready */}
           {currentTeam && (
-            <>
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: compact ? '0.6rem' : '1rem',
+            }}>
               <div style={{
                 backgroundColor: '#f8fafc',
                 padding: compact ? '0.6rem' : '1.5rem',
@@ -545,10 +553,11 @@ const TeamSelectionScreen = ({
 
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
+                  gridTemplateColumns: compact ? '1fr' : '1fr 1fr',
                   gap: compact ? '0.6rem' : '1.5rem',
                   maxWidth: '800px',
                   margin: '0 auto',
+                  width: '100%',
                 }}>
                   {teamCharacters[currentTeam].map(character => (
                     <div
@@ -598,7 +607,7 @@ const TeamSelectionScreen = ({
               {selectedCharacter && (
                 <div style={{
                   textAlign: 'center',
-                  marginTop: compact ? '0.25rem' : '1rem',
+                  marginTop: compact ? 0 : '1rem',
                 }}>
                   <button
                     onClick={onToggleReady}
@@ -623,7 +632,7 @@ const TeamSelectionScreen = ({
                   </button>
                 </div>
               )}
-            </>
+            </div>
           )}
 
           {/* Mensaje de estado */}
@@ -635,6 +644,7 @@ const TeamSelectionScreen = ({
             backgroundColor: 'rgba(241, 245, 249, 0.5)',
             borderRadius: '8px',
             marginTop: compact ? 0 : '0.5rem',
+            gridColumn: compact && currentTeam ? '1 / -1' : undefined,
           }}>
             {!currentTeam
               ? t('teamSelection.selectTeamContinue')

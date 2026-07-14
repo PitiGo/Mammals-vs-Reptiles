@@ -45,13 +45,23 @@ export function createGameScene(canvas, { refs, isMobileRef, onSceneReady, onLoa
             scene
         );
 
-        // Mismo encuadre en todas las pantallas: la cámara sigue al jugador a la
-        // misma distancia y con el mismo FOV vertical que en PC, así la proporción
-        // de campo visible no cambia entre móvil y escritorio (en apaisado solo
-        // varía lo que asoma por los laterales, como al redimensionar en PC).
+        // Mismo encuadre en todas las pantallas. Babylon fija el FOV vertical,
+        // así que una pantalla más ancha que 16:9 (móvil apaisado ~20:9) mostraría
+        // más campo por los laterales (hasta la cancha entera). Para que la
+        // proporción visible sea la misma en móvil y PC, en pantallas anchas se
+        // reduce el FOV vertical hasta igualar el ancho visible de un monitor 16:9.
+        const BASE_FOV = 0.8;      // FOV vertical por defecto (referencia escritorio)
+        const REF_ASPECT = 16 / 9; // Encuadre de referencia
         const applyCameraLayout = () => {
             engine.resize();
             camera.setPosition(new BABYLON.Vector3(0, 15, -20));
+            const aspect = engine.getAspectRatio(camera);
+            if (aspect > REF_ASPECT) {
+                const refHorizontalFov = 2 * Math.atan(Math.tan(BASE_FOV / 2) * REF_ASPECT);
+                camera.fov = 2 * Math.atan(Math.tan(refHorizontalFov / 2) / aspect);
+            } else {
+                camera.fov = BASE_FOV;
+            }
         };
 
         applyCameraLayout();
