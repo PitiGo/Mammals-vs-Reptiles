@@ -85,7 +85,7 @@ const Game = () => {
     const [showingEndMessage, setShowingEndMessage] = useState(false);
 
     // Feedback visual para goles
-    const [goalFeedback, setGoalFeedback] = useState({ visible: false, team: null });
+    const [goalFeedback, setGoalFeedback] = useState({ visible: false, team: null, scorerLabel: null });
     const goalTimeoutRef = useRef(null);
     const confettiCanvasRef = useRef(null);
     const confettiAnimRef = useRef(null);
@@ -179,8 +179,8 @@ const Game = () => {
     const [chatExpanded, setChatExpanded] = useState(true);
     const [toast, setToast] = useState({ message: null, type: 'error' });
     const [kickoffEndsAt, setKickoffEndsAt] = useState(null);
-    // Ayuda móvil: visible solo unos segundos al empezar, para despejar la pantalla.
-    const [showMobileHelp, setShowMobileHelp] = useState(true);
+    // Ayuda inicial breve: desaparece para mantener libre el campo de juego.
+    const [showControlsHelp, setShowControlsHelp] = useState(true);
 
     const sceneReadyRef = useRef(false);
     const isMobileRef = useRef(isMobile);
@@ -278,6 +278,11 @@ const Game = () => {
         },
         onReadyUpdate: setReadyState,
         onGameStart: () => {
+            if (goalTimeoutRef.current) {
+                clearTimeout(goalTimeoutRef.current);
+                goalTimeoutRef.current = null;
+            }
+            setGoalFeedback({ visible: false, team: null, scorerLabel: null });
             setShowingEndMessage(false);
             setGameOverInfo(null);
             setGameStarted(true);
@@ -294,27 +299,33 @@ const Game = () => {
             playCrowdCheer();
             fxRef.current?.goalBurst?.(team);
             scoreTextRef.current?.pulse?.(team);
-            if (scorerName) {
-                const label = ownGoal
+            const scorerLabel = scorerName
+                ? (ownGoal
                     ? `${t('gameUI.ownGoal')}: ${scorerName}`
-                    : `${t('gameUI.goalBy')}: ${scorerName}`;
-                setToast({ message: label, type: 'info' });
-            }
+                    : `${t('gameUI.goalBy')}: ${scorerName}`)
+                : null;
             if (scoreTextRef.current) {
                 scoreTextRef.current.left.text = (newScore.left || 0).toString();
                 scoreTextRef.current.right.text = (newScore.right || 0).toString();
             }
-            setGoalFeedback({ visible: true, team });
+            // El goleador forma parte del mismo aviso de gol. Antes se mostraba
+            // también como toast independiente, solapando otros mensajes.
+            setGoalFeedback({ visible: true, team, scorerLabel });
             setShakeScreen(true);
             setTimeout(() => setShakeScreen(false), 500);
             startConfetti(team);
             if (goalTimeoutRef.current) clearTimeout(goalTimeoutRef.current);
             goalTimeoutRef.current = setTimeout(() => {
-                setGoalFeedback({ visible: false, team: null });
+                setGoalFeedback({ visible: false, team: null, scorerLabel: null });
                 goalTimeoutRef.current = null;
-            }, 2200);
+            }, 1800);
         },
         onGameOver: (gameOverData) => {
+            if (goalTimeoutRef.current) {
+                clearTimeout(goalTimeoutRef.current);
+                goalTimeoutRef.current = null;
+            }
+            setGoalFeedback({ visible: false, team: null, scorerLabel: null });
             setGameStarted(false);
             setGameInProgress(false);
             setKickoffEndsAt(null);
@@ -460,11 +471,11 @@ const Game = () => {
     }, [roomId, setSearchParams, availableRooms, roomPrefix]);
 
     useEffect(() => {
-        if (!gameStarted || !isMobile) return undefined;
-        setShowMobileHelp(true);
-        const timer = setTimeout(() => setShowMobileHelp(false), 8000);
+        if (!gameStarted) return undefined;
+        setShowControlsHelp(true);
+        const timer = setTimeout(() => setShowControlsHelp(false), 6000);
         return () => clearTimeout(timer);
-    }, [gameStarted, isMobile]);
+    }, [gameStarted]);
 
     const mobilePortraitBlocked = isMobile && isPortrait && gameStarted;
 
@@ -811,29 +822,36 @@ const Game = () => {
             {goalFeedback.visible && (
                 <div style={{
                     position: 'absolute',
-                    top: '50%',
+                    top: isMobile ? '92px' : '96px',
                     left: '50%',
-                    transform: 'translate(-50%, -50%) scale(1)',
+                    transform: 'translateX(-50%) scale(1)',
                     color: 'white',
                     backgroundColor: goalFeedback.team === 'left' ? 'rgba(59, 130, 246, 0.85)' : 'rgba(239, 68, 68, 0.85)',
-                    padding: isMobile ? '12px 20px' : '18px 28px',
+                    padding: isMobile ? '7px 16px' : '10px 22px',
                     borderRadius: '12px',
-                    fontSize: isMobile ? '28px' : '40px',
+                    fontSize: isMobile ? '20px' : '28px',
                     fontWeight: 800,
                     letterSpacing: '2px',
                     boxShadow: '0 8px 30px rgba(0,0,0,0.35)',
                     zIndex: 100,
                     backdropFilter: 'blur(2px)',
                     pointerEvents: 'none',
-                    animation: 'goalPop 0.4s ease-out, goalFade 2.2s ease-in forwards'
+                    animation: 'goalBannerPop 0.3s ease-out, goalFade 1.8s ease-in forwards',
+                    textAlign: 'center',
+                    whiteSpace: 'nowrap',
                 }}>
                     {t('gameUI.goal') || 'GOAL!'}
                     <div style={{
-                        marginTop: isMobile ? '6px' : '8px',
-                        fontSize: isMobile ? '12px' : '14px',
-                        opacity: 0.9
+                        marginTop: '3px',
+                        fontSize: isMobile ? '11px' : '13px',
+                        letterSpacing: 0,
+                        opacity: 0.95
                     }}>
-                        {goalFeedback.team === 'left' ? (t('teamSelection.mammals') || 'Mammals') : (t('teamSelection.reptiles') || 'Reptiles')}
+                        {goalFeedback.scorerLabel || (
+                            goalFeedback.team === 'left'
+                                ? (t('teamSelection.mammals') || 'Mammals')
+                                : (t('teamSelection.reptiles') || 'Reptiles')
+                        )}
                     </div>
                 </div>
             )}
@@ -919,27 +937,26 @@ const Game = () => {
 
 
 
-                        {/* Instrucciones móviles: se ocultan solas a los pocos segundos */}
-                        {showMobileHelp && (
+                        {/* Ayuda breve en una esquina; nunca cubre al jugador. */}
+                        {showControlsHelp && (
                             <div style={{
                                 position: 'absolute',
-                                top: '120px',
-                                left: '50%',
-                                transform: 'translateX(-50%)',
-                                backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                                padding: '8px 16px',
+                                top: '10px',
+                                left: 'max(10px, env(safe-area-inset-left))',
+                                backgroundColor: 'rgba(0, 0, 0, 0.48)',
+                                padding: '6px 9px',
                                 borderRadius: '8px',
                                 color: 'white',
-                                fontSize: '12px',
-                                textAlign: 'center',
+                                fontSize: '10px',
+                                lineHeight: 1.25,
+                                textAlign: 'left',
                                 zIndex: 10,
-                                opacity: 0.8,
+                                opacity: 0.75,
                                 pointerEvents: 'none',
-                                maxWidth: '85vw'
+                                maxWidth: '210px'
                             }}>
-                                <h3 style={{ margin: '0 0 8px 0' }}>{t('gameUI.controls')}</h3>
-                                <p style={{ margin: '0 0 4px 0' }}>{t('gameUI.mobileMovementInstructions')}</p>
-                                <p style={{ margin: '0 0 4px 0' }}>{t('gameUI.mobileChatInstructions')}</p>
+                                <p style={{ margin: '0 0 2px 0' }}>{t('gameUI.mobileMovementInstructions')}</p>
+                                <p style={{ margin: '0 0 2px 0' }}>{t('gameUI.mobileChatInstructions')}</p>
                                 <p style={{ margin: '0' }}>{t('gameUI.mobileSprintInstructions')}</p>
                             </div>
                         )}
@@ -1139,35 +1156,32 @@ const Game = () => {
                                 </div>
                             </div>
 
-                            {/* Instrucciones */}
-                            <div style={{
+                            {/* Instrucciones iniciales: desaparecen para no ocupar campo. */}
+                            {showControlsHelp && <div style={{
                                 color: 'white',
-                                fontSize: '14px',
-                                backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                                padding: '10px',
+                                fontSize: '12px',
+                                lineHeight: 1.25,
+                                backgroundColor: 'rgba(0, 0, 0, 0.48)',
+                                padding: '7px 9px',
                                 borderRadius: '8px',
-                                pointerEvents: 'auto'
+                                pointerEvents: 'none',
+                                opacity: 0.78,
+                                maxWidth: '300px',
                             }}>
-                                <h3 style={{ margin: '0 0 8px 0' }}>{t('gameUI.controls')}</h3>
+                                <h3 style={{ margin: '0 0 4px 0', fontSize: '13px' }}>{t('gameUI.controls')}</h3>
                                 <p style={{ margin: '0 0 4px 0' }}>
-                                    {isMobile
-                                        ? t('gameUI.mobileMovementInstructions')
-                                        : t('gameUI.moveInstructions')}
+                                    {t('gameUI.moveInstructions')}
                                 </p>
                                 <p style={{ margin: '0 0 4px 0' }}>
-                                    {isMobile
-                                        ? t('gameUI.mobileChatInstructions')
-                                        : t('gameUI.ballControlInstructions')}
+                                    {t('gameUI.ballControlInstructions')}
                                 </p>
                                 <p style={{ margin: '0 0 4px 0' }}>
-                                    {isMobile
-                                        ? t('gameUI.mobileSprintInstructions')
-                                        : t('gameUI.sprintInstructions')}
+                                    {t('gameUI.sprintInstructions')}
                                 </p>
                                 <p style={{ margin: '0' }}>
-                                    {isMobile ? '' : t('gameUI.enterToSend')}
+                                    {t('gameUI.enterToSend')}
                                 </p>
-                            </div>
+                            </div>}
                         </div>
 
                         {/* Panel Inferior */}

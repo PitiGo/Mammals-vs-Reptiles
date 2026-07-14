@@ -1,11 +1,17 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 const GameToast = ({ message, type = 'error', onDismiss, duration = 4000 }) => {
+  const onDismissRef = useRef(onDismiss);
+
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
+
   useEffect(() => {
     if (!message) return undefined;
-    const timer = setTimeout(() => onDismiss?.(), duration);
+    const timer = setTimeout(() => onDismissRef.current?.(), duration);
     return () => clearTimeout(timer);
-  }, [message, duration, onDismiss]);
+  }, [message, duration]);
 
   if (!message) return null;
 
@@ -16,21 +22,20 @@ const GameToast = ({ message, type = 'error', onDismiss, duration = 4000 }) => {
       role="alert"
       style={{
         position: 'fixed',
-        // Debajo de la franja del marcador + reloj (~90px), para no taparlos.
-        top: '96px',
-        left: '50%',
-        transform: 'translateX(-50%)',
+        // Aviso lateral: evita el centro de acción, el marcador y el reloj.
+        top: 'max(12px, env(safe-area-inset-top))',
+        left: 'max(12px, env(safe-area-inset-left))',
         zIndex: 10000,
         backgroundColor: bg,
         color: 'white',
         padding: '0.6rem 1.1rem',
         borderRadius: '8px',
         boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-        maxWidth: '90vw',
+        maxWidth: 'min(320px, 44vw)',
         fontSize: '0.9rem',
         textAlign: 'center',
         pointerEvents: 'none',
-        animation: 'fadeIn 0.3s ease',
+        animation: 'fadeIn 0.2s ease',
       }}
     >
       {message}
